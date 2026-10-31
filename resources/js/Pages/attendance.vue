@@ -26,6 +26,10 @@ const props = defineProps({
     },
     isAdmin: { type: Boolean, default: false },
     availableYears: { type: Array, default: () => [] },
+    // 🆕 Class / Section filter options (from backend)
+    availableClassNames: { type: Array, default: () => [] },
+    availableSections: { type: Array, default: () => [] },
+    hasNoSection: { type: Boolean, default: false },
     selectedYear: { type: String, default: () => String(new Date().getFullYear()) },
     filters: { type: Object, default: () => ({}) },
     flash: { type: Object, default: () => ({}) },
@@ -49,6 +53,16 @@ const filteredYearSuggestions = computed(() => {
     if (!yearInput.value) return yearSuggestions.value
     const input = String(yearInput.value).trim()
     return yearSuggestions.value.filter(y => String(y).includes(input))
+})
+
+// ============================================================
+// 🆕 Class + Section Filter State (Backend)
+// ============================================================
+const selectedClassName = ref(props.filters?.class_name || '')
+const selectedSection = ref(props.filters?.section || '')
+
+const hasActiveFilters = computed(() => {
+    return !!(classSearch.value || selectedClassName.value || selectedSection.value)
 })
 
 const applyYear = () => {
@@ -100,6 +114,10 @@ watch(() => props.selectedYear, (newYear) => {
 })
 
 const handleYearChange = () => {
+    // 🆕 Year change → class/section options change, so reset them
+    selectedClassName.value = ''
+    selectedSection.value = ''
+
     router.get(route('attendance.index'), {
         academic_year: selectedYear.value,
     }, {
@@ -124,6 +142,8 @@ watch(classSearch, () => {
 const fetchClasses = (page = 1) => {
     router.get(route('attendance.index'), {
         academic_year: selectedYear.value,
+        class_name: selectedClassName.value || undefined,   // 🆕
+        section: selectedSection.value || undefined,        // 🆕
         search: classSearch.value || undefined,
         page,
     }, {
@@ -133,8 +153,21 @@ const fetchClasses = (page = 1) => {
     })
 }
 
+// 🆕 Class dropdown changed → reset section, reload from backend
+const handleClassNameChange = () => {
+    selectedSection.value = ''
+    fetchClasses(1)
+}
+
+// 🆕 Section dropdown changed → reload from backend
+const handleSectionChange = () => {
+    fetchClasses(1)
+}
+
 const resetClassFilters = () => {
     classSearch.value = ''
+    selectedClassName.value = ''   // 🆕
+    selectedSection.value = ''     // 🆕
     fetchClasses(1)
 }
 
@@ -370,9 +403,9 @@ onBeforeUnmount(() => {
                     <p class="text-sm font-medium text-red-800 dark:text-red-200 break-words">❌ {{ flash.error }}</p>
                 </div>
 
-                <!-- Year Filter -->
+                <!-- Year Filter + 🆕 Class & Section Filter -->
                 <div class="mb-4 sm:mb-6 bg-white dark:bg-slate-900 rounded-2xl border border-indigo-200/60 dark:border-indigo-800/60 shadow-sm p-4 sm:p-5 transition-colors duration-300">
-                    <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div class="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4">
                         <div class="flex items-center gap-3">
                             <div class="p-2 rounded-lg bg-indigo-100 dark:bg-indigo-900/40 flex-shrink-0">
                                 <svg class="w-5 h-5 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -381,94 +414,124 @@ onBeforeUnmount(() => {
                             </div>
                             <div>
                                 <h3 class="text-sm font-bold text-indigo-800 dark:text-indigo-200">Academic Year</h3>
-                                <p class="text-xs text-indigo-500 dark:text-indigo-400">Select or type a year</p>
+                                <p class="text-xs text-indigo-500 dark:text-indigo-400">Select year, class & section</p>
                             </div>
                         </div>
 
-                        <div class="relative flex items-center gap-2 w-full sm:w-auto">
-                            <button
-                                type="button"
-                                @click="decrementYear"
-                                class="p-2 rounded-lg border-2 border-indigo-200 dark:border-indigo-700 bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 hover:border-indigo-400 transition-colors active:scale-95 flex-shrink-0"
-                            >
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7" />
-                                </svg>
-                            </button>
-
-                            <div class="relative flex-1 sm:flex-none" @focusout="setTimeout(() => showYearDropdown = false, 200)">
-                                <input
-                                    v-model="yearInput"
-                                    @focus="showYearDropdown = true"
-                                    @keydown.enter.prevent="applyYear"
-                                    @keydown.esc="showYearDropdown = false"
-                                    type="text"
-                                    inputmode="numeric"
-                                    maxlength="4"
-                                    placeholder="YYYY"
-                                    class="w-full sm:w-36 rounded-xl border-2 border-indigo-200 dark:border-indigo-700 bg-indigo-50/30 dark:bg-slate-800/50 pl-4 pr-10 py-2 sm:py-2.5 text-sm font-bold text-indigo-900 dark:text-indigo-100 text-center tracking-wider outline-none cursor-text focus:border-indigo-500 focus:bg-white dark:focus:bg-slate-800 focus:ring-4 focus:ring-indigo-500/10"
-                                />
-
+                        <div class="flex flex-col md:flex-row items-stretch md:items-center gap-3 w-full xl:w-auto">
+                            <!-- Year control (unchanged) -->
+                            <div class="relative flex items-center gap-2 w-full md:w-auto">
                                 <button
                                     type="button"
-                                    @click="showYearDropdown = !showYearDropdown"
-                                    class="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md text-indigo-500 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors"
+                                    @click="decrementYear"
+                                    class="p-2 rounded-lg border-2 border-indigo-200 dark:border-indigo-700 bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 hover:border-indigo-400 transition-colors active:scale-95 flex-shrink-0"
                                 >
-                                    <svg
-                                        class="w-4 h-4 transition-transform duration-200"
-                                        :class="showYearDropdown ? 'rotate-180' : ''"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        viewBox="0 0 24 24"
-                                    >
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7" />
                                     </svg>
                                 </button>
 
-                                <div
-                                    v-if="showYearDropdown && filteredYearSuggestions.length > 0"
-                                    class="absolute top-full left-0 sm:left-auto sm:right-0 mt-2 w-full sm:w-44 bg-white dark:bg-slate-800 rounded-xl border-2 border-indigo-200 dark:border-indigo-700 shadow-xl z-50 overflow-hidden"
-                                >
-                                    <div class="max-h-60 overflow-y-auto py-1">
-                                        <button
-                                            v-for="year in filteredYearSuggestions"
-                                            :key="year"
-                                            type="button"
-                                            @mousedown.prevent="selectYearSuggestion(year)"
-                                            class="w-full text-left px-4 py-2 text-sm font-medium transition-colors flex items-center justify-between"
-                                            :class="String(year) === String(selectedYear)
-                                                ? 'bg-indigo-600 text-white'
-                                                : 'text-indigo-800 dark:text-indigo-200 hover:bg-indigo-50 dark:hover:bg-indigo-950/50'"
+                                <div class="relative flex-1 sm:flex-none" @focusout="setTimeout(() => showYearDropdown = false, 200)">
+                                    <input
+                                        v-model="yearInput"
+                                        @focus="showYearDropdown = true"
+                                        @keydown.enter.prevent="applyYear"
+                                        @keydown.esc="showYearDropdown = false"
+                                        type="text"
+                                        inputmode="numeric"
+                                        maxlength="4"
+                                        placeholder="YYYY"
+                                        class="w-full sm:w-36 rounded-xl border-2 border-indigo-200 dark:border-indigo-700 bg-indigo-50/30 dark:bg-slate-800/50 pl-4 pr-10 py-2 sm:py-2.5 text-sm font-bold text-indigo-900 dark:text-indigo-100 text-center tracking-wider outline-none cursor-text focus:border-indigo-500 focus:bg-white dark:focus:bg-slate-800 focus:ring-4 focus:ring-indigo-500/10"
+                                    />
+
+                                    <button
+                                        type="button"
+                                        @click="showYearDropdown = !showYearDropdown"
+                                        class="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md text-indigo-500 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors"
+                                    >
+                                        <svg
+                                            class="w-4 h-4 transition-transform duration-200"
+                                            :class="showYearDropdown ? 'rotate-180' : ''"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            viewBox="0 0 24 24"
                                         >
-                                            <span>{{ year }}</span>
-                                            <span
-                                                v-if="String(year) === String(new Date().getFullYear())"
-                                                class="text-[9px] px-1.5 py-0.5 rounded-full font-bold"
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                                        </svg>
+                                    </button>
+
+                                    <div
+                                        v-if="showYearDropdown && filteredYearSuggestions.length > 0"
+                                        class="absolute top-full left-0 sm:left-auto sm:right-0 mt-2 w-full sm:w-44 bg-white dark:bg-slate-800 rounded-xl border-2 border-indigo-200 dark:border-indigo-700 shadow-xl z-50 overflow-hidden"
+                                    >
+                                        <div class="max-h-60 overflow-y-auto py-1">
+                                            <button
+                                                v-for="year in filteredYearSuggestions"
+                                                :key="year"
+                                                type="button"
+                                                @mousedown.prevent="selectYearSuggestion(year)"
+                                                class="w-full text-left px-4 py-2 text-sm font-medium transition-colors flex items-center justify-between"
                                                 :class="String(year) === String(selectedYear)
-                                                    ? 'bg-white/20 text-white'
-                                                    : 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300'"
+                                                    ? 'bg-indigo-600 text-white'
+                                                    : 'text-indigo-800 dark:text-indigo-200 hover:bg-indigo-50 dark:hover:bg-indigo-950/50'"
                                             >
-                                                NOW
-                                            </span>
-                                        </button>
-                                    </div>
-                                    <div class="border-t border-indigo-100 dark:border-indigo-800 px-3 py-1.5 bg-indigo-50/50 dark:bg-indigo-950/40">
-                                        <p class="text-[10px] text-indigo-600 dark:text-indigo-400 font-medium">
-                                            💡 Type year & press Enter
-                                        </p>
+                                                <span>{{ year }}</span>
+                                                <span
+                                                    v-if="String(year) === String(new Date().getFullYear())"
+                                                    class="text-[9px] px-1.5 py-0.5 rounded-full font-bold"
+                                                    :class="String(year) === String(selectedYear)
+                                                        ? 'bg-white/20 text-white'
+                                                        : 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300'"
+                                                >
+                                                    NOW
+                                                </span>
+                                            </button>
+                                        </div>
+                                        <div class="border-t border-indigo-100 dark:border-indigo-800 px-3 py-1.5 bg-indigo-50/50 dark:bg-indigo-950/40">
+                                            <p class="text-[10px] text-indigo-600 dark:text-indigo-400 font-medium">
+                                                💡 Type year & press Enter
+                                            </p>
+                                        </div>
                                     </div>
                                 </div>
+
+                                <button
+                                    type="button"
+                                    @click="incrementYear"
+                                    class="p-2 rounded-lg border-2 border-indigo-200 dark:border-indigo-700 bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 hover:border-indigo-400 transition-colors active:scale-95 flex-shrink-0"
+                                >
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7" />
+                                    </svg>
+                                </button>
                             </div>
 
-                            <button
-                                type="button"
-                                @click="incrementYear"
-                                class="p-2 rounded-lg border-2 border-indigo-200 dark:border-indigo-700 bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 hover:border-indigo-400 transition-colors active:scale-95 flex-shrink-0"
-                            >
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7" />
-                                </svg>
-                            </button>
+                            <!-- 🆕 Class select -->
+                            <div class="w-full md:w-44">
+                                <label class="block text-[10px] font-bold text-indigo-400 dark:text-indigo-500 uppercase tracking-wider mb-1">Class</label>
+                                <select
+                                    v-model="selectedClassName"
+                                    @change="handleClassNameChange"
+                                    class="w-full rounded-xl border-2 border-indigo-200 dark:border-indigo-700 bg-white dark:bg-slate-800 px-3 py-2 sm:py-2.5 text-sm font-semibold text-indigo-900 dark:text-indigo-100 outline-none cursor-pointer focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
+                                >
+                                    <option value="">All Classes</option>
+                                    <option v-for="cn in availableClassNames" :key="cn" :value="cn">{{ cn }}</option>
+                                </select>
+                            </div>
+
+                            <!-- 🆕 Section select -->
+                            <div class="w-full md:w-40">
+                                <label class="block text-[10px] font-bold text-indigo-400 dark:text-indigo-500 uppercase tracking-wider mb-1">Section</label>
+                                <select
+                                    v-model="selectedSection"
+                                    @change="handleSectionChange"
+                                    class="w-full rounded-xl border-2 border-indigo-200 dark:border-indigo-700 bg-white dark:bg-slate-800 px-3 py-2 sm:py-2.5 text-sm font-semibold text-indigo-900 dark:text-indigo-100 outline-none cursor-pointer focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
+                                >
+                                    <option value="">All Sections</option>
+                                    <option v-for="sec in availableSections" :key="sec" :value="sec">{{ sec }}</option>
+                                    <option v-if="hasNoSection" value="__none__">No Section</option>
+                                </select>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -488,7 +551,7 @@ onBeforeUnmount(() => {
                             />
                         </div>
                         <button
-                            v-if="classSearch"
+                            v-if="hasActiveFilters"
                             @click="resetClassFilters"
                             class="px-4 py-2 sm:py-2.5 text-sm font-medium text-rose-600 dark:text-rose-400 border-2 border-rose-200 dark:border-rose-800 rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors flex-shrink-0"
                         >

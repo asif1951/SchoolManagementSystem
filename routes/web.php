@@ -162,14 +162,20 @@ Route::middleware(['auth', 'verified'])->group(function () {
         })->name('events.store');
 
         Route::post('/events/{event}', function ($event) {
-            if ($r = checkAdmin()) return $r;
-            return app(WebsiteEventController::class)->update(request(), $event);
-        })->name('events.update');
+    if ($r = checkAdmin()) return $r;
+
+    $event = \App\Models\WebsiteEvent::findOrFail($event);
+
+    return app(WebsiteEventController::class)->update(request(), $event);
+})->name('events.update');
 
         Route::delete('/events/{event}', function ($event) {
-            if ($r = checkAdmin()) return $r;
-            return app(WebsiteEventController::class)->destroy(request(), $event);
-        })->name('events.destroy');
+    if ($r = checkAdmin()) return $r;
+
+    $event = \App\Models\WebsiteEvent::findOrFail($event);
+
+    return app(WebsiteEventController::class)->destroy($event);
+})->name('events.destroy');
 
         Route::get('/contact-info', function () {
             if ($r = checkAdmin()) return $r;
@@ -216,15 +222,21 @@ Route::middleware(['auth', 'verified'])->group(function () {
             return app(NoticeController::class)->store(request());
         })->name('notices.store');
 
-        Route::post('/notices/{notice}', function ($notice) {
-            if ($r = checkAdmin()) return $r;
-            return app(NoticeController::class)->update(request(), $notice);
-        })->name('notices.update');
+       Route::post('/notices/{notice}', function ($notice) {
+    if ($r = checkAdmin()) return $r;
 
-        Route::delete('/notices/{notice}', function ($notice) {
-            if ($r = checkAdmin()) return $r;
-            return app(NoticeController::class)->destroy(request(), $notice);
-        })->name('notices.destroy');
+    $notice = \App\Models\Notice::findOrFail($notice);
+
+    return app(NoticeController::class)->update(request(), $notice);
+})->name('notices.update');
+
+Route::delete('/notices/{notice}', function ($notice) {
+    if ($r = checkAdmin()) return $r;
+
+    $notice = \App\Models\Notice::findOrFail($notice);
+
+    return app(NoticeController::class)->destroy($notice);
+})->name('notices.destroy');
 
         Route::post('/notices/{notice}/toggle-featured', function ($notice) {
             if ($r = checkAdmin()) return $r;
@@ -242,9 +254,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
         })->name('teachers-staff.store');
 
         Route::post('/teachers-staff/{teacher}', function ($teacher) {
-            if ($r = checkAdmin()) return $r;
-            return app(TeacherController::class)->update(request(), $teacher);
-        })->name('teachers-staff.update');
+    if ($r = checkAdmin()) return $r;
+
+    $teacherModel = \App\Models\Teacher::findOrFail($teacher);
+
+    return app(TeacherController::class)->update(request(), $teacherModel);
+})->name('teachers-staff.update');
 
         Route::delete('/teachers-staff/{teacher}', function ($teacher) {
             if ($r = checkAdmin()) return $r;

@@ -152,6 +152,24 @@ const closeForm = () => {
 }
 
 // ============================================================
+// BACKDROP CLICK (text select drag fix)
+// ============================================================
+// Modal close hobe sudhu jkn mousedown ar mouseup duto i backdrop e hoy.
+// Input e text select kore baire drag korle modal ar close hobe na.
+let backdropMouseDown = false
+
+const onBackdropMouseDown = (e) => {
+    backdropMouseDown = e.target === e.currentTarget
+}
+
+const onBackdropClick = (e) => {
+    if (backdropMouseDown && e.target === e.currentTarget) {
+        closeForm()
+    }
+    backdropMouseDown = false
+}
+
+// ============================================================
 // FILE HANDLE
 // ============================================================
 const handleFile = (e) => {
@@ -382,7 +400,8 @@ onBeforeUnmount(() => {
                 <div
                     v-if="showForm"
                     class="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-slate-900/60 dark:bg-black/70 backdrop-blur-sm p-3 sm:p-6 overflow-y-auto"
-                    @click.self="closeForm"
+                    @mousedown="onBackdropMouseDown"
+                    @click="onBackdropClick"
                 >
                     <div class="w-full max-w-xl rounded-2xl bg-white dark:bg-slate-800 shadow-2xl border border-indigo-100 dark:border-slate-700 overflow-hidden my-auto transition-colors duration-300">
                         <!-- Modal Header -->

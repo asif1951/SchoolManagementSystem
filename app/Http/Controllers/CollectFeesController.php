@@ -17,19 +17,31 @@ class CollectFeesController extends Controller
     {
         $selectedYear = (string) ($request->input('academic_year') ?? now()->year);
 
-        [$classes, $availableYears] = $this->buildClassData($selectedYear);
+        // 🆕 Class / Section filters
+        $selectedClassName = (string) $request->input('class_name', '');
+        $selectedSection   = (string) $request->input('section', '');
+
+        [$classes, $availableYears] = $this->buildClassData($selectedYear, $selectedClassName, $selectedSection);
+
+        // 🆕 Dropdown options (based on selected year / class)
+        [$availableClassNames, $availableSections, $hasNoSection] = $this->buildFilterOptions($selectedYear, $selectedClassName);
 
         return Inertia::render('fees', [
-            'classes'        => $classes,
-            'classInfo'      => null,
-            'feeTypes'       => [],
-            'students'       => [],
-            'availableYears' => $availableYears,
-            'filters'        => [
+            'classes'             => $classes,
+            'classInfo'           => null,
+            'feeTypes'            => [],
+            'students'            => [],
+            'availableYears'      => $availableYears,
+            'availableClassNames' => $availableClassNames, // 🆕
+            'availableSections'   => $availableSections,   // 🆕
+            'hasNoSection'        => $hasNoSection,        // 🆕
+            'filters'             => [
                 'academic_year' => $selectedYear,
                 'search'        => '',
+                'class_name'    => $selectedClassName,     // 🆕
+                'section'       => $selectedSection,       // 🆕
             ],
-            'flash'          => session()->only(['success', 'error']),
+            'flash'               => session()->only(['success', 'error']),
         ]);
     }
 
@@ -312,15 +324,33 @@ class CollectFeesController extends Controller
 
     /**
      * Build classes + available years data for a given academic year.
+     * 🆕 Optional $className / $section backend filters ('__none__' = no section).
      */
-    private function buildClassData(string $selectedYear): array
+    private function buildClassData(string $selectedYear, string $className = '', string $section = ''): array
     {
-        $classRows = SchoolClass::query()
+        $classQuery = SchoolClass::query()
             ->where('status', 'active')
             ->where('academic_year', $selectedYear)
             ->orderBy('class_name')
-            ->orderBy('section')
-            ->get();
+            ->orderBy('section');
+
+        // 🆕 Class filter
+        if ($className !== '') {
+            $classQuery->where('class_name', $className);
+        }
+
+        // 🆕 Section filter
+        if ($section !== '') {
+            if ($section === '__none__') {
+                $classQuery->where(function ($w) {
+                    $w->whereNull('section')->orWhere('section', '');
+                });
+            } else {
+                $classQuery->where('section', $section);
+            }
+        }
+
+        $classRows = $classQuery->get();
 
         $classes = $classRows->map(function ($cls) {
             $q = DB::table('students')
@@ -377,6 +407,52 @@ class CollectFeesController extends Controller
         }
 
         return [$classes, $availableYears];
+    }
+
+    /**
+     * 🆕 Build Class / Section dropdown options for the selected year.
+     * Sections are narrowed by the selected class (if any).
+     *
+     * @return array [classNames[], sections[], hasNoSection(bool)]
+     */
+    private function buildFilterOptions(string $selectedYear, string $className = ''): array
+    {
+        $base = SchoolClass::query()
+            ->where('status', 'active')
+            ->where('academic_year', $selectedYear);
+
+        $classNames = (clone $base)
+            ->select('class_name')
+            ->distinct()
+            ->orderBy('class_name')
+            ->pluck('class_name')
+            ->map(fn ($c) => (string) $c)
+            ->values()
+            ->toArray();
+
+        $sectionBase = clone $base;
+        if ($className !== '') {
+            $sectionBase->where('class_name', $className);
+        }
+
+        $sections = (clone $sectionBase)
+            ->whereNotNull('section')
+            ->where('section', '!=', '')
+            ->select('section')
+            ->distinct()
+            ->orderBy('section')
+            ->pluck('section')
+            ->map(fn ($s) => (string) $s)
+            ->values()
+            ->toArray();
+
+        $hasNoSection = (clone $sectionBase)
+            ->where(function ($w) {
+                $w->whereNull('section')->orWhere('section', '');
+            })
+            ->exists();
+
+        return [$classNames, $sections, $hasNoSection];
     }
 
     /**

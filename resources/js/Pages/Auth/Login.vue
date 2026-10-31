@@ -85,8 +85,7 @@ const submit = () => {
         <div
             class="card-enter relative z-20 w-full
                    lg:w-[min(92vw,1280px)]
-                   lg:h-[min(88vh,760px)]
-                   lg:min-h-[560px]
+                   lg:max-h-[92vh]
                    bg-white dark:bg-[#0F1E38]
                    rounded-none sm:rounded-2xl lg:rounded-3xl
                    shadow-[0_30px_80px_-20px_rgba(11,79,158,0.45)]
@@ -169,7 +168,7 @@ const submit = () => {
             <!-- ==================================================== -->
             <!-- RIGHT PANEL — Login Form                             -->
             <!-- ==================================================== -->
-            <div class="relative flex items-center justify-center bg-white dark:bg-[#0F1E38] px-5 sm:px-8 lg:px-10 xl:px-14 py-8 sm:py-10 lg:py-12 transition-colors duration-500">
+            <div class="relative flex items-center justify-center bg-white dark:bg-[#0F1E38] px-5 sm:px-8 lg:px-10 xl:px-14 py-8 sm:py-10 lg:py-12 transition-colors duration-500 lg:overflow-y-auto lg:max-h-[92vh]">
 
                 <div class="form-enter w-full max-w-[400px] xl:max-w-[420px]">
 
@@ -299,10 +298,7 @@ const submit = () => {
                             :disabled="form.processing"
                             class="mt-2 w-full inline-flex items-center justify-center gap-2 rounded-xl bg-[#0B4F9E] hover:bg-[#0A4488] dark:bg-[#1565C0] dark:hover:bg-[#1976D2] px-5 py-3 xl:py-3.5 text-[14px] xl:text-[15px] font-bold text-white shadow-md shadow-[#0B4F9E]/25 dark:shadow-[#1565C0]/40 transition hover:shadow-lg active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed"
                         >
-                            <svg v-if="!form.processing" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M11 16l-4-4m0 0l4-4m-4 4h14M3 12a9 9 0 1118 0 9 9 0 01-18 0z"/>
-                            </svg>
-                            <svg v-else class="h-5 w-5 animate-spin" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                            <svg v-if="form.processing" class="h-5 w-5 animate-spin" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
                             </svg>
                             {{ form.processing ? 'Logging in...' : 'Login' }}

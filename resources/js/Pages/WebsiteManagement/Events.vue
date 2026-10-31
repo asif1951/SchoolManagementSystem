@@ -66,9 +66,19 @@ const openCreateModal = () => {
 const openEditModal = (event) => {
     editingEvent.value = event
     form.clearErrors()
+
     form.title       = event.title ?? ''
-    form.event_date  = event.event_date ?? ''
-    form.event_time  = event.event_time ?? ''
+
+    // ✅ Date normalize — "2026-10-26T00:00:00.000000Z" বা "2026-10-26" → "2026-10-26"
+    form.event_date  = event.event_date
+        ? String(event.event_date).split('T')[0].substring(0, 10)
+        : ''
+
+    // ✅ Time normalize — "10:10:00" → "10:10" (input type="time" এর জন্য)
+    form.event_time  = event.event_time
+        ? String(event.event_time).substring(0, 5)
+        : ''
+
     form.location    = event.location ?? ''
     form.description = event.description ?? ''
     form.status      = event.status ?? 'upcoming'
@@ -125,6 +135,11 @@ const removeImage = () => {
 // SUBMIT — Create or Update
 // ============================================================
 const submit = () => {
+    // ✅ Time normalize — "10:10:00" থাকলে "10:10" করে দাও
+    if (form.event_time && String(form.event_time).length > 5) {
+        form.event_time = String(form.event_time).substring(0, 5)
+    }
+
     if (editingEvent.value) {
         form.post(route('website-management.events.update', editingEvent.value.id), {
             preserveScroll: true,
@@ -134,6 +149,7 @@ const submit = () => {
                 closeModal()
             },
             onError: (errors) => {
+                console.error('Update errors:', errors)
                 const first = Object.values(errors)[0] || 'Please fix the errors and try again.'
                 showToast(first, 'error')
             },
@@ -147,6 +163,7 @@ const submit = () => {
                 closeModal()
             },
             onError: (errors) => {
+                console.error('Create errors:', errors)
                 const first = Object.values(errors)[0] || 'Please fix the errors and try again.'
                 showToast(first, 'error')
             },

@@ -23,6 +23,10 @@ class StudentResultController extends Controller
 
         $selectedYear = $request->input('academic_year', now()->year);
 
+        // 🆕 Class / Section filters
+        $selectedClassName = (string) $request->input('class_name', '');
+        $selectedSection   = (string) $request->input('section', '');
+
         // ⭐ Ensure classes exist for this year (auto-copy from most recent year)
         $this->ensureClassesForYear((int) $selectedYear);
 
@@ -48,6 +52,29 @@ class StudentResultController extends Controller
         if (! $isAdmin) {
             $classQuery->where('class_teacher', $user->name);
         }
+
+        // 🆕 Class filter (backend)
+        if ($selectedClassName !== '') {
+            $classQuery->where('class_name', $selectedClassName);
+        }
+
+        // 🆕 Section filter (backend) — '__none__' = classes without section
+        if ($selectedSection !== '') {
+            if ($selectedSection === '__none__') {
+                $classQuery->where(function ($q) {
+                    $q->whereNull('section')->orWhere('section', '');
+                });
+            } else {
+                $classQuery->where('section', $selectedSection);
+            }
+        }
+
+        // 🆕 Dropdown options for Class / Section filters
+        [$filterClassNames, $filterSections, $filterHasNoSection] = $this->buildClassFilterOptions(
+            $selectedYear,
+            $selectedClassName,
+            $isAdmin ? null : $user->name
+        );
 
         $classes = $classQuery->get()->map(function ($class) {
             $studentQuery = Student::where('class', $class->class_name)
@@ -94,8 +121,13 @@ class StudentResultController extends Controller
                 'exam_type' => 'final',
                 'search' => '',
                 'roll_number' => '',
+                'class_name' => $selectedClassName, // 🆕
+                'section' => $selectedSection,      // 🆕
             ],
             'availableYears' => $availableYears,
+            'filterClassNames' => $filterClassNames,       // 🆕
+            'filterSections' => $filterSections,           // 🆕
+            'filterHasNoSection' => $filterHasNoSection,   // 🆕
             'isAdmin' => $isAdmin,
             'schoolInfo' => $this->getSchoolInfo(),
             'flash' => session()->only(['success', 'error']),
@@ -518,6 +550,57 @@ class StudentResultController extends Controller
                 ]
             );
         }
+    }
+
+    /**
+     * 🆕 Build Class / Section dropdown options for the class-list filter.
+     *    Scoped by selected year (and teacher for non-admin).
+     *    Sections are narrowed by the selected class (if any).
+     *
+     * @return array [classNames[], sections[], hasNoSection(bool)]
+     */
+    private function buildClassFilterOptions($year, string $className = '', ?string $teacherName = null): array
+    {
+        $base = SchoolClass::query()
+            ->where('status', 'active')
+            ->where('academic_year', $year);
+
+        if ($teacherName !== null) {
+            $base->where('class_teacher', $teacherName);
+        }
+
+        $classNames = (clone $base)
+            ->select('class_name')
+            ->distinct()
+            ->orderBy('class_name')
+            ->pluck('class_name')
+            ->map(fn ($c) => (string) $c)
+            ->values()
+            ->toArray();
+
+        $sectionBase = clone $base;
+        if ($className !== '') {
+            $sectionBase->where('class_name', $className);
+        }
+
+        $sections = (clone $sectionBase)
+            ->whereNotNull('section')
+            ->where('section', '!=', '')
+            ->select('section')
+            ->distinct()
+            ->orderBy('section')
+            ->pluck('section')
+            ->map(fn ($s) => (string) $s)
+            ->values()
+            ->toArray();
+
+        $hasNoSection = (clone $sectionBase)
+            ->where(function ($q) {
+                $q->whereNull('section')->orWhere('section', '');
+            })
+            ->exists();
+
+        return [$classNames, $sections, $hasNoSection];
     }
 
     /**

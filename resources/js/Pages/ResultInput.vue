@@ -21,6 +21,8 @@ const props = defineProps({
     examTypes: { type: Array, default: () => [] },
     filters: { type: Object, default: () => ({}) },
     availableYears: { type: Array, default: () => [] },
+    classNames: { type: Array, default: () => [] },
+    sections: { type: Array, default: () => [] },
     selectedYear: { type: String, default: '' },
     isAdmin: { type: Boolean, default: false },
     flash: { type: Object, default: () => ({}) },
@@ -211,6 +213,10 @@ watch(() => props.selectedYear, (newYear) => {
 })
 
 const handleYearChange = () => {
+    // ✅ Year change hole class & section reset (year onujayi class alada)
+    classFilter.value = ''
+    sectionFilter.value = ''
+
     router.get(route('results.index'), {
         academic_year: selectedYear.value,
         search: classSearch.value || undefined,
@@ -222,9 +228,11 @@ const handleYearChange = () => {
 }
 
 // ============================================================
-// Class Search (Backend)
+// Class Search + Class/Section Filter (Backend)
 // ============================================================
 const classSearch = ref(props.filters?.search || '')
+const classFilter = ref(props.filters?.class_name || '')
+const sectionFilter = ref(props.filters?.section || '')
 let classSearchTimeout = null
 
 watch(classSearch, () => {
@@ -237,6 +245,8 @@ watch(classSearch, () => {
 const fetchClasses = (page = 1) => {
     router.get(route('results.index'), {
         academic_year: selectedYear.value,
+        class_name: classFilter.value || undefined,
+        section: sectionFilter.value || undefined,
         search: classSearch.value || undefined,
         page,
     }, {
@@ -246,8 +256,20 @@ const fetchClasses = (page = 1) => {
     })
 }
 
+// ✅ Class select kora hole section reset hoy, tarpor backend theke notun list ashe
+const handleClassFilterChange = () => {
+    sectionFilter.value = ''
+    fetchClasses(1)
+}
+
+const handleSectionFilterChange = () => {
+    fetchClasses(1)
+}
+
 const resetClassSearch = () => {
     classSearch.value = ''
+    classFilter.value = ''
+    sectionFilter.value = ''
     fetchClasses(1)
 }
 
@@ -734,7 +756,7 @@ onBeforeUnmount(() => {
 
                 <!-- Year Filter -->
                 <div class="mb-4 sm:mb-6 bg-white dark:bg-slate-900 rounded-2xl border border-indigo-200/60 dark:border-indigo-800/60 shadow-sm p-4 sm:p-5 transition-colors duration-300">
-                    <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div class="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
                         <div class="flex items-center gap-3">
                             <div class="p-2 rounded-lg bg-indigo-100 dark:bg-indigo-900/40 flex-shrink-0">
                                 <svg class="w-5 h-5 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -743,10 +765,11 @@ onBeforeUnmount(() => {
                             </div>
                             <div>
                                 <h3 class="text-sm font-bold text-indigo-800 dark:text-indigo-200">Academic Year</h3>
-                                <p class="text-xs text-indigo-500 dark:text-indigo-400">Select or type a year</p>
+                                <p class="text-xs text-indigo-500 dark:text-indigo-400">Select year, class & section</p>
                             </div>
                         </div>
 
+                        <div class="flex flex-col sm:flex-row sm:items-center gap-3 w-full lg:w-auto">
                         <div class="relative flex items-center gap-2 w-full sm:w-auto">
                             <button
                                 type="button"
@@ -832,6 +855,41 @@ onBeforeUnmount(() => {
                                 </svg>
                             </button>
                         </div>
+
+                        <!-- ✅ Class & Section Filter (backend) -->
+                        <div class="flex items-center gap-2 w-full sm:w-auto">
+                            <select
+                                v-model="classFilter"
+                                @change="handleClassFilterChange"
+                                class="flex-1 sm:flex-none sm:w-40 rounded-xl border-2 border-indigo-200 dark:border-indigo-700 bg-white dark:bg-slate-800 px-3 py-2 sm:py-2.5 text-sm font-semibold text-indigo-800 dark:text-indigo-200 outline-none cursor-pointer focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
+                            >
+                                <option value="">All Classes</option>
+                                <option
+                                    v-for="cn in classNames"
+                                    :key="cn"
+                                    :value="cn"
+                                >
+                                    {{ cn }}
+                                </option>
+                            </select>
+
+                            <select
+                                v-model="sectionFilter"
+                                @change="handleSectionFilterChange"
+                                :disabled="!classFilter"
+                                class="flex-1 sm:flex-none sm:w-40 rounded-xl border-2 border-indigo-200 dark:border-indigo-700 bg-white dark:bg-slate-800 px-3 py-2 sm:py-2.5 text-sm font-semibold text-indigo-800 dark:text-indigo-200 outline-none cursor-pointer focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                <option value="">{{ classFilter ? 'All Sections' : 'Select class first' }}</option>
+                                <option
+                                    v-for="sec in sections"
+                                    :key="sec"
+                                    :value="sec"
+                                >
+                                    {{ sec }}
+                                </option>
+                            </select>
+                        </div>
+                        </div>
                     </div>
                 </div>
 
@@ -850,7 +908,7 @@ onBeforeUnmount(() => {
                             />
                         </div>
                         <button
-                            v-if="classSearch"
+                            v-if="classSearch || classFilter || sectionFilter"
                             @click="resetClassSearch"
                             class="px-4 py-2 sm:py-2.5 text-sm font-medium text-rose-600 dark:text-rose-400 border-2 border-rose-200 dark:border-rose-800 rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors flex-shrink-0"
                         >
@@ -1201,7 +1259,7 @@ onBeforeUnmount(() => {
                     </div>
 
                     <div v-else class="overflow-x-auto">
-                        <table class="w-full min-w-[900px]">
+                        <table class="w-full min-w-[700px]">
                             <thead class="bg-indigo-50/50 dark:bg-indigo-950/30 border-b-2 border-indigo-100 dark:border-indigo-800">
                                 <tr>
                                     <!-- ✅ z-20 added for mobile sticky fix -->
@@ -1211,7 +1269,7 @@ onBeforeUnmount(() => {
                                     <th
                                         v-for="subject in subjects"
                                         :key="subject"
-                                        class="px-2 sm:px-3 lg:px-4 py-3 sm:py-4 text-center text-[10px] sm:text-xs font-bold uppercase tracking-wider min-w-[120px] sm:min-w-[150px]"
+                                        class="px-1.5 sm:px-2 py-3 sm:py-4 text-center text-[10px] sm:text-xs font-bold uppercase tracking-wider min-w-[90px] sm:min-w-[100px]"
                                         :class="isSubjectLocked(subject) ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300' : 'text-indigo-600 dark:text-indigo-400'"
                                     >
                                         <div class="flex flex-col items-center gap-2">
@@ -1293,7 +1351,7 @@ onBeforeUnmount(() => {
                                     <td
                                         v-for="subject in subjects"
                                         :key="`${student.id}-${subject}`"
-                                        class="px-2 sm:px-3 lg:px-4 py-3 sm:py-4 text-center"
+                                        class="px-1.5 sm:px-2 py-3 sm:py-4 text-center"
                                         :class="isSubjectLocked(subject) ? 'bg-amber-50/30 dark:bg-amber-950/20' : ''"
                                     >
                                         <div class="flex flex-col items-center gap-1.5 sm:gap-2">

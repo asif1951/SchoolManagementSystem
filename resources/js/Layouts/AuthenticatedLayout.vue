@@ -636,6 +636,16 @@ const closeMobileMenu = () => {
                     <!-- RIGHT -->
                     <div class="flex shrink-0 items-center gap-1 sm:gap-2 lg:gap-4">
 
+                        <!-- BACK TO SITE -->
+                        <Link
+                            href="/"
+                            title="Back to Site"
+                            aria-label="Back to Site"
+                            class="inline-flex h-9 sm:h-10 items-center justify-center whitespace-nowrap rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 sm:px-3.5 text-xs sm:text-sm font-semibold text-slate-600 dark:text-slate-200 transition-all duration-200 hover:border-blue-400 hover:bg-slate-50 dark:hover:bg-slate-700 hover:text-blue-600 dark:hover:text-blue-300 active:scale-95"
+                        >
+                            <span>Back to Site</span>
+                        </Link>
+
                         <!-- THEME TOGGLE -->
                         <button
                             type="button"
@@ -650,13 +660,6 @@ const closeMobileMenu = () => {
                             <svg v-else class="h-4 w-4 sm:h-5 sm:w-5 transition-transform duration-300 hover:-rotate-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
                             </svg>
-                        </button>
-
-                        <button type="button" class="relative rounded-xl p-2 text-slate-500 dark:text-slate-400 transition hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-800 dark:hover:text-slate-100 sm:p-2.5">
-                            <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 00-12 0v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-                            </svg>
-                            <span class="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-white dark:ring-slate-900 sm:right-2 sm:top-2"></span>
                         </button>
 
                         <div class="hidden h-8 w-px bg-slate-200 dark:bg-slate-700 sm:block"></div>

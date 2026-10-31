@@ -2,17 +2,17 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\ResultInput; // ✅ মডেল আপডেট
+use App\Models\ResultInput; 
 use App\Models\SchoolClass;
 use App\Models\Student;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 
-class ResultInputController extends Controller // ✅ ক্লাস আপডেট
+class ResultInputController extends Controller 
 {
     /**
-     * Class list page (with year filter + pagination + search)
+     * Class list page (with year filter + class/section filter + pagination + search)
      */
     public function index(Request $request)
     {
@@ -21,6 +21,15 @@ class ResultInputController extends Controller // ✅ ক্লাস আপড�
 
         // ✅ String year
         $selectedYear = (string) $request->input('academic_year', now()->year);
+
+        // ✅ Class & Section filter (backend)
+        $classNameFilter = (string) $request->input('class_name', '');
+        $sectionFilter = (string) $request->input('section', '');
+
+        // ✅ Section sudhu class select thakle kaj korbe
+        if ($classNameFilter === '') {
+            $sectionFilter = '';
+        }
 
         // ✅ Available years — string[]
         $availableYears = SchoolClass::query()
@@ -36,6 +45,9 @@ class ResultInputController extends Controller // ✅ ক্লাস আপড�
             $availableYears = [(string) now()->year];
         }
 
+        // ✅ Class name & section dropdown options (database theke)
+        [$classNames, $sections] = $this->getFilterOptions($selectedYear, $isAdmin, $user, $classNameFilter);
+
         // ✅ Class query — filter by academic_year
         $query = SchoolClass::query()
             ->where('status', 'active')
@@ -45,6 +57,16 @@ class ResultInputController extends Controller // ✅ ক্লাস আপড�
 
         if (! $isAdmin) {
             $query->where('class_teacher', $user->name);
+        }
+
+        // ✅ Class filter
+        if ($classNameFilter !== '') {
+            $query->where('class_name', $classNameFilter);
+        }
+
+        // ✅ Section filter
+        if ($sectionFilter !== '') {
+            $query->where('section', $sectionFilter);
         }
 
         // ✅ Backend search filter (class name / section / teacher)
@@ -97,7 +119,7 @@ class ResultInputController extends Controller // ✅ ক্লাস আপড�
             'per_page' => $paginatedClasses->perPage(),
         ];
 
-        return Inertia::render('ResultInput', [ // ✅ Vue পেজের নাম
+        return Inertia::render('ResultInput', [ 
             'classes' => $classesPaginated,
             'classInfo' => null,
             'students' => [
@@ -119,12 +141,16 @@ class ResultInputController extends Controller // ✅ ক্লাস আপড�
             'schoolInfo' => $this->getSchoolInfo(),
             'flash' => session()->only(['success', 'error']),
             'availableYears' => $availableYears,
+            'classNames' => $classNames,
+            'sections' => $sections,
             'selectedYear' => $selectedYear,
             'filters' => [
                 'academic_year' => $selectedYear,
                 'exam_type' => 'final',
                 'search' => $request->input('search', ''),
                 'roll_number' => '',
+                'class_name' => $classNameFilter,
+                'section' => $sectionFilter,
             ],
         ]);
     }
@@ -404,7 +430,7 @@ class ResultInputController extends Controller // ✅ ক্লাস আপড�
             ->map(fn ($y) => (string) $y)
             ->toArray();
 
-        return Inertia::render('ResultInput', [ // ✅ Vue পেজের নাম
+        return Inertia::render('ResultInput', [ 
             'classes' => $classesPaginated,
             'classInfo' => [
                 'id' => $class->id,
@@ -424,12 +450,16 @@ class ResultInputController extends Controller // ✅ ক্লাস আপড�
             'schoolInfo' => $this->getSchoolInfo(),
             'flash' => session()->only(['success', 'error']),
             'availableYears' => $availableYears,
+            'classNames' => [],
+            'sections' => [],
             'selectedYear' => $selectedYear,
             'filters' => [
                 'academic_year' => $selectedYear,
                 'exam_type' => $examType,
                 'search' => $search,
                 'roll_number' => $rollNumber,
+                'class_name' => '',
+                'section' => '',
             ],
         ]);
     }
@@ -596,6 +626,50 @@ class ResultInputController extends Controller // ✅ ক্লাস আপড�
         return redirect()
             ->route('results.show', [$class->id, 'exam_type' => $validated['exam_type']])
             ->with('success', "🔓 {$validated['subject']} unlocked successfully!");
+    }
+
+    /**
+     * ✅ Class name & section dropdown options (school_classes table theke)
+     * - Class names: selected year er sob class (teacher hole shudhu nijer class)
+     * - Sections: shudhu selected class er section
+     */
+    private function getFilterOptions(string $year, bool $isAdmin, $user, string $className = ''): array
+    {
+        $baseQuery = function () use ($year, $isAdmin, $user) {
+            $q = SchoolClass::query()
+                ->where('status', 'active')
+                ->where('academic_year', $year);
+
+            if (! $isAdmin) {
+                $q->where('class_teacher', $user->name);
+            }
+
+            return $q;
+        };
+
+        $classNames = $baseQuery()
+            ->select('class_name')
+            ->distinct()
+            ->orderBy('class_name')
+            ->pluck('class_name')
+            ->values()
+            ->toArray();
+
+        $sections = [];
+        if ($className !== '') {
+            $sections = $baseQuery()
+                ->where('class_name', $className)
+                ->whereNotNull('section')
+                ->where('section', '!=', '')
+                ->select('section')
+                ->distinct()
+                ->orderBy('section')
+                ->pluck('section')
+                ->values()
+                ->toArray();
+        }
+
+        return [$classNames, $sections];
     }
 
     private function calculateGrade($marks): array

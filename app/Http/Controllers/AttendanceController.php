@@ -15,7 +15,7 @@ class AttendanceController extends Controller
      * Main attendance page
      * - Admin: all active classes
      * - Teacher: only their own classes
-     * - ✅ Academic Year filter + Pagination
+     * - ✅ Academic Year filter + Class filter + Section filter + Pagination
      */
     public function index(Request $request)
     {
@@ -43,6 +43,50 @@ class AttendanceController extends Controller
             $availableYears = [(string) now()->year];
         }
 
+        // 🆕 Selected class / section filters
+        $selectedClassName = (string) $request->input('class_name', '');
+        $selectedSection = (string) $request->input('section', '');
+
+        // 🆕 Options for Class / Section dropdowns (year + teacher scope aware)
+        $optionsBase = SchoolClass::query()
+            ->where('status', 'active')
+            ->where('academic_year', $selectedYear);
+
+        if (! $isAdmin) {
+            $optionsBase->where('class_teacher', $teacherName);
+        }
+
+        $availableClassNames = (clone $optionsBase)
+            ->select('class_name')
+            ->distinct()
+            ->orderBy('class_name')
+            ->pluck('class_name')
+            ->map(fn ($c) => (string) $c)
+            ->values()
+            ->toArray();
+
+        $sectionOptionsQuery = clone $optionsBase;
+        if ($selectedClassName !== '') {
+            $sectionOptionsQuery->where('class_name', $selectedClassName);
+        }
+
+        $availableSections = (clone $sectionOptionsQuery)
+            ->whereNotNull('section')
+            ->where('section', '!=', '')
+            ->select('section')
+            ->distinct()
+            ->orderBy('section')
+            ->pluck('section')
+            ->map(fn ($s) => (string) $s)
+            ->values()
+            ->toArray();
+
+        $hasNoSection = (clone $sectionOptionsQuery)
+            ->where(function ($q) {
+                $q->whereNull('section')->orWhere('section', '');
+            })
+            ->exists();
+
         // ✅ Class query — filtered by selected year
         $query = SchoolClass::query()
             ->where('status', 'active')
@@ -52,6 +96,22 @@ class AttendanceController extends Controller
 
         if (! $isAdmin) {
             $query->where('class_teacher', $teacherName);
+        }
+
+        // 🆕 Class filter (backend)
+        if ($selectedClassName !== '') {
+            $query->where('class_name', $selectedClassName);
+        }
+
+        // 🆕 Section filter (backend) — '__none__' = classes without section
+        if ($selectedSection !== '') {
+            if ($selectedSection === '__none__') {
+                $query->where(function ($q) {
+                    $q->whereNull('section')->orWhere('section', '');
+                });
+            } else {
+                $query->where('section', $selectedSection);
+            }
         }
 
         // ✅ Search filter (backend)
@@ -103,10 +163,15 @@ class AttendanceController extends Controller
             'selectedDate' => $request->input('date', today()->toDateString()),
             'isAdmin' => $isAdmin,
             'availableYears' => $availableYears,
+            'availableClassNames' => $availableClassNames,   // 🆕
+            'availableSections' => $availableSections,       // 🆕
+            'hasNoSection' => $hasNoSection,                 // 🆕
             'selectedYear' => $selectedYear,
             'filters' => [
                 'search' => $request->input('search', ''),
                 'academic_year' => $selectedYear,
+                'class_name' => $selectedClassName,          // 🆕
+                'section' => $selectedSection,               // 🆕
             ],
             'flash' => session()->only(['success', 'error']),
         ]);
