@@ -372,6 +372,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         if ($r = checkStaff()) return $r;
         return app(AttendanceController::class)->store(request());
     })->name('attendance.store');
+    Route::get('attendance/{class}/records', [AttendanceController::class, 'records'])
+    ->name('attendance.records');
 
     // Exams
     Route::get('/exams', function () {

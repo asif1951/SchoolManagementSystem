@@ -420,6 +420,225 @@ class AttendanceController extends Controller
     }
 
     /**
+     * 📊 Attendance records for a class within a period (week / month / year / custom)
+     * GET attendance/{class}/records?period=this_week&search=&filter=&sort=
+     * GET attendance/{class}/records?period=custom&from=YYYY-MM-DD&to=YYYY-MM-DD
+     * Returns JSON consumed by the "Attendance Records" panel.
+     *
+     * 🆕 Backend date range:
+     *    - period : today | this_week | last_week | this_month | last_month | last_30 | this_year | custom
+     *               (week = Saturday → Friday)
+     *    - from/to: only required when period = custom
+     *
+     * 🆕 Backend filtering:
+     *    - search : student name / student id / roll number
+     *    - filter : all | absent | low (<75%)
+     *    - sort   : roll | lowest | most_absent
+     *    The `summary` is always calculated for ALL students of the class
+     *    in the selected period (it does not change with search / filter).
+     */
+    public function records(Request $request, $classId)
+    {
+        $request->validate([
+            'period' => 'nullable|in:today,this_week,last_week,this_month,last_month,last_30,this_year,custom',
+            'from'   => 'required_if:period,custom|nullable|date',
+            'to'     => 'required_if:period,custom|nullable|date|after_or_equal:from',
+            'search' => 'nullable|string|max:100',
+            'filter' => 'nullable|in:all,absent,low',
+            'sort'   => 'nullable|in:roll,lowest,most_absent',
+        ]);
+
+        $class = SchoolClass::findOrFail($classId);
+
+        $user = Auth::user();
+        $isAdmin = $user->role === 'admin';
+
+        if (! $isAdmin && $class->class_teacher !== $user->name) {
+            return response()->json(['message' => 'You are not authorized for this class.'], 403);
+        }
+
+        // 🆕 Date range is calculated here (backend), week starts on Saturday
+        $period = (string) $request->input('period', $request->filled('from') ? 'custom' : 'this_week');
+        [$from, $to] = $this->resolvePeriodRange(
+            $period,
+            $request->input('from'),
+            $request->input('to')
+        );
+
+        // 🆕 Filter / sort / search inputs
+        $search = trim((string) $request->input('search', ''));
+        $filter = (string) $request->input('filter', 'all');
+        $sort   = (string) $request->input('sort', 'roll');
+
+        // ✅ Same student scope as show() — section-strict NULL-safe
+        $studentsQuery = Student::query()
+            ->where('class', $class->class_name)
+            ->where('academic_year', $class->academic_year)
+            ->where('status', 'active');
+
+        if ($class->section === null || $class->section === '') {
+            $studentsQuery->where(function ($q) {
+                $q->whereNull('section')->orWhere('section', '');
+            });
+        } else {
+            $studentsQuery->where('section', $class->section);
+        }
+
+        $students = $studentsQuery
+            ->orderBy('roll_number')
+            ->orderBy('student_name')
+            ->get();
+
+        $studentIds = $students->pluck('id')->toArray();
+
+        // ✅ Attendance rows in the selected range, grouped by student
+        $attendances = collect();
+        if (! empty($studentIds)) {
+            $attendances = Attendance::query()
+                ->whereIn('student_id', $studentIds)
+                ->whereDate('attendance_date', '>=', $from)
+                ->whereDate('attendance_date', '<=', $to)
+                ->orderBy('attendance_date')
+                ->get()
+                ->groupBy('student_id');
+        }
+
+        $data = $students->map(function ($student) use ($attendances) {
+            $recs = $attendances->get($student->id, collect());
+
+            $present = $recs->where('status', 'present')->count();
+            $absent  = $recs->where('status', 'absent')->count();
+            $late    = $recs->where('status', 'late')->count();
+            $leave   = $recs->where('status', 'leave')->count();
+            $total   = $recs->count();
+
+            // Same formula as show(): (present + late) / total
+            $percentage = $total > 0
+                ? round((($present + $late) / $total) * 100, 1)
+                : 0;
+
+            return [
+                'id' => $student->id,
+                'student_id' => $student->student_id,
+                'student_name' => $student->student_name,
+                'roll_number' => $student->roll_number,
+                'present' => $present,
+                'absent' => $absent,
+                'late' => $late,
+                'leave' => $leave,
+                'total' => $total,
+                'percentage' => $percentage,
+                'records' => $recs->map(fn ($r) => [
+                    'date' => \Carbon\Carbon::parse($r->attendance_date)->format('Y-m-d'),
+                    'status' => $r->status,
+                ])->values(),
+            ];
+        })->values();
+
+        // 🆕 Summary — always for ALL students of the class (before any filter)
+        $sumPresent = (int) $data->sum('present');
+        $sumAbsent  = (int) $data->sum('absent');
+        $sumLate    = (int) $data->sum('late');
+        $sumLeave   = (int) $data->sum('leave');
+        $sumTotal   = $sumPresent + $sumAbsent + $sumLate + $sumLeave;
+
+        $summary = [
+            'students'   => $data->count(),
+            'present'    => $sumPresent,
+            'absent'     => $sumAbsent,
+            'late'       => $sumLate,
+            'leave'      => $sumLeave,
+            'total'      => $sumTotal,
+            'percentage' => $sumTotal > 0
+                ? round((($sumPresent + $sumLate) / $sumTotal) * 100, 1)
+                : 0,
+        ];
+
+        // 🆕 Search (name / student id / roll number)
+        if ($search !== '') {
+            $data = $data->filter(function ($s) use ($search) {
+                return mb_stripos((string) ($s['student_name'] ?? ''), $search) !== false
+                    || mb_stripos((string) ($s['student_id'] ?? ''), $search) !== false
+                    || mb_stripos((string) ($s['roll_number'] ?? ''), $search) !== false;
+            });
+        }
+
+        // 🆕 Quick filter
+        if ($filter === 'absent') {
+            $data = $data->filter(fn ($s) => (int) $s['absent'] > 0);
+        } elseif ($filter === 'low') {
+            $data = $data->filter(fn ($s) => (int) $s['total'] > 0 && (float) $s['percentage'] < 75);
+        }
+
+        // 🆕 Sorting
+        if ($sort === 'lowest') {
+            $data = $data->sortBy(fn ($s) => (float) $s['percentage']);
+        } elseif ($sort === 'most_absent') {
+            $data = $data->sortByDesc(fn ($s) => (int) $s['absent']);
+        }
+
+        return response()->json([
+            'range' => ['from' => $from, 'to' => $to, 'period' => $period],
+            'summary' => $summary,
+            'students' => $data->values(),
+        ]);
+    }
+
+    /**
+     * 🆕 Calculate [from, to] (Y-m-d) for a period. Week = Saturday → Friday.
+     */
+    private function resolvePeriodRange(string $period, ?string $from = null, ?string $to = null): array
+    {
+        $today = \Carbon\Carbon::today();
+
+        switch ($period) {
+            case 'today':
+                $start = $today->copy();
+                $end = $today->copy();
+                break;
+
+            case 'last_week':
+                $start = $today->copy()->subWeek()->startOfWeek(\Carbon\Carbon::SATURDAY);
+                $end = $start->copy()->addDays(6);
+                break;
+
+            case 'this_month':
+                $start = $today->copy()->startOfMonth();
+                $end = $today->copy()->endOfMonth();
+                break;
+
+            case 'last_month':
+                $lastMonth = $today->copy()->subMonthNoOverflow();
+                $start = $lastMonth->copy()->startOfMonth();
+                $end = $lastMonth->copy()->endOfMonth();
+                break;
+
+            case 'last_30':
+                $start = $today->copy()->subDays(29);
+                $end = $today->copy();
+                break;
+
+            case 'this_year':
+                $start = $today->copy()->startOfYear();
+                $end = $today->copy()->endOfYear();
+                break;
+
+            case 'custom':
+                $start = \Carbon\Carbon::parse($from);
+                $end = \Carbon\Carbon::parse($to);
+                break;
+
+            case 'this_week':
+            default:
+                $start = $today->copy()->startOfWeek(\Carbon\Carbon::SATURDAY);
+                $end = $start->copy()->addDays(6);
+                break;
+        }
+
+        return [$start->toDateString(), $end->toDateString()];
+    }
+
+    /**
      * Helper: format class data — section-strict NULL-safe student count
      */
     private function formatClassData($class, $isAdmin = false)
