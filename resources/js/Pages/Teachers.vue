@@ -7,6 +7,8 @@ import { useTheme } from '@/composables/useTheme'
 
 const props = defineProps({
     teachers:    { type: Array,  default: () => [] },
+    featured:    { type: Array,  default: () => [] },
+    schoolName:  { type: String, default: '' },
     departments: { type: Array,  default: () => [] },
     filters:     { type: Object, default: () => ({}) },
     hero:        { type: Object, default: () => ({}) },
@@ -15,6 +17,9 @@ const props = defineProps({
 const page = usePage()
 const school = computed(() => page.props.school ?? {})
 const contact = computed(() => page.props.contact ?? {})
+
+// School name comes from backend (controller prop), fallback to shared props
+const displaySchoolName = computed(() => props.schoolName || school.value?.name || '')
 
 const { initTheme } = useTheme()
 onMounted(() => initTheme())
@@ -115,6 +120,22 @@ const clearFilters = () => {
 }
 
 const hasFilters = computed(() => search.value || department.value !== 'all')
+
+// ============================================================
+// FEATURED (ORDER 1 & 2) + REGULAR TEACHERS
+// ============================================================
+// Uses `featured` from backend if available, otherwise falls back to Display Order 1 & 2
+const featuredTeachers = computed(() => {
+    if (props.featured?.length) return props.featured
+    return props.teachers
+        .filter(t => [1, 2].includes(Number(t.order)))
+        .sort((a, b) => Number(a.order) - Number(b.order))
+})
+
+const regularTeachers = computed(() => {
+    const ids = new Set(featuredTeachers.value.map(t => t.id))
+    return props.teachers.filter(t => !ids.has(t.id))
+})
 
 // ============================================================
 // SIDEBAR STATS
@@ -354,6 +375,145 @@ const avgExperience = computed(() => {
                             </button>
                         </div>
 
+                        <!-- ============================================================ -->
+                        <!-- FEATURED: Display Order 1 & 2 (Chairman / Principal) -->
+                        <!-- Chairman + Principal side by side in ONE line (stacked only on mobile) -->
+                        <!-- ============================================================ -->
+                        <div v-if="featuredTeachers.length" class="mb-8 grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-6">
+                            <div
+                                v-for="(t, i) in featuredTeachers"
+                                :key="`featured-${t.id}`"
+                                class="fc-card group relative overflow-hidden rounded-[28px] p-[2px] shadow-2xl transition-all duration-500 hover:-translate-y-1"
+                                :class="i === 0 ? 'shadow-[#0055B6]/40 hover:shadow-[#1883DB]/50' : 'shadow-emerald-600/30 hover:shadow-emerald-400/50'"
+                            >
+                                <!-- Animated rotating gold border -->
+                                <span class="fc-spin pointer-events-none absolute -inset-[60%]"></span>
+
+                                <!-- Card body -->
+                                <div
+                                    class="relative min-h-[150px] sm:min-h-[200px] overflow-hidden rounded-[26px]"
+                                    :class="i === 0
+                                        ? 'bg-gradient-to-br from-[#061F3F] via-[#0B376B] to-[#0055B6]'
+                                        : 'bg-gradient-to-br from-[#04262B] via-[#0A5C57] to-[#0E9F6E]'"
+                                >
+                                    <!-- Dotted pattern -->
+                                    <div
+                                        class="pointer-events-none absolute inset-0 opacity-[0.08]"
+                                        style="background-image: radial-gradient(#ffffff 1px, transparent 1px); background-size: 18px 18px;"
+                                    ></div>
+
+                                    <!-- Glow blobs -->
+                                    <div class="pointer-events-none absolute -left-16 -top-16 h-56 w-56 rounded-full bg-white/10 blur-3xl"></div>
+                                    <div
+                                        class="pointer-events-none absolute -bottom-20 right-0 h-64 w-[420px] rounded-full blur-3xl"
+                                        :class="i === 0 ? 'bg-[#1883DB]/50' : 'bg-[#34D399]/40'"
+                                    ></div>
+
+                                    <!-- Giant watermark designation -->
+                                    <span class="pointer-events-none absolute -bottom-3 left-4 select-none whitespace-nowrap text-[44px] sm:text-[84px] md:text-[60px] lg:text-[68px] font-black uppercase leading-none tracking-tighter text-white/[0.06]">
+                                        {{ t.designation || (i === 0 ? 'Chairman' : 'Principal') }}
+                                    </span>
+
+                                    <!-- Floating sparkles -->
+                                    <span class="pointer-events-none absolute right-[30%] top-5 h-2 w-2 animate-pulse rounded-full bg-[#F5B82E]"></span>
+                                    <span class="pointer-events-none absolute right-[6%] top-4 h-1.5 w-1.5 animate-pulse rounded-full bg-white/80" style="animation-delay: .6s"></span>
+                                    <span class="pointer-events-none absolute right-[24%] bottom-6 h-1.5 w-1.5 animate-pulse rounded-full bg-[#FFD97A]" style="animation-delay: 1.2s"></span>
+
+                                    <!-- Arch photo frame -->
+                                    <div class="absolute bottom-0 right-4 sm:right-14 md:right-4 lg:right-7 z-[1] h-[88%] sm:h-[90%] w-[92px] sm:w-[170px] md:w-[110px] lg:w-[140px]">
+                                        <!-- Outer glow ring -->
+                                        <div class="absolute -inset-2 rounded-t-[999px] bg-gradient-to-b from-[#F5B82E] via-white/30 to-transparent opacity-80 blur-[2px]"></div>
+                                        <!-- Photo -->
+                                        <div class="relative h-full w-full overflow-hidden rounded-t-[999px] bg-white/10 ring-2 sm:ring-4 ring-white/30 backdrop-blur-sm">
+                                            <img
+                                                v-if="t.photo"
+                                                :src="storageUrl(t.photo)"
+                                                :alt="t.name"
+                                                class="h-full w-full object-cover object-top transition-transform duration-700 group-hover:scale-110"
+                                                loading="lazy"
+                                                @error="(e) => { e.target.src = placeholderImg }"
+                                            />
+                                            <div v-else class="flex h-full w-full items-center justify-center">
+                                                <span class="text-6xl font-black text-white/50">{{ t.name?.charAt(0)?.toUpperCase() }}</span>
+                                            </div>
+                                            <div class="pointer-events-none absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/40 to-transparent"></div>
+                                        </div>
+
+                                        <!-- Floating star medal -->
+                                        <div class="absolute -left-3 top-[22%] flex h-7 w-7 sm:h-9 sm:w-9 items-center justify-center rounded-full bg-gradient-to-br from-[#F5B82E] to-[#E89B0C] text-[#0B376B] shadow-lg shadow-black/30 ring-2 ring-white/60 transition-transform duration-500 group-hover:rotate-12 group-hover:scale-110">
+                                            <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
+                                                <path d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.196-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118L2.05 10.1c-.783-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+                                            </svg>
+                                        </div>
+                                    </div>
+
+                                    <!-- Text content -->
+                                    <div class="relative z-10 flex min-h-[150px] sm:min-h-[200px] max-w-[calc(100%_-_112px)] sm:max-w-[calc(100%_-_270px)] md:max-w-[calc(100%_-_135px)] lg:max-w-[calc(100%_-_175px)] flex-col justify-center px-4 py-3 sm:px-8 sm:py-5 md:px-5 lg:px-6">
+                                        <!-- Gold designation ribbon -->
+                                        <span class="inline-flex w-fit items-center gap-1.5 rounded-full bg-gradient-to-r from-[#F5B82E] to-[#FFD97A] px-3 py-0.5 sm:px-3.5 sm:py-1 text-[9px] sm:text-xs font-black uppercase tracking-[0.15em] text-[#0B376B] shadow-lg shadow-[#F5B82E]/30">
+                                            <span class="h-1.5 w-1.5 rounded-full bg-[#0B376B]"></span>
+                                            {{ t.designation || (i === 0 ? 'Chairman' : 'Principal') }}
+                                        </span>
+
+                                        <h3 class="mt-2 sm:mt-3 text-lg sm:text-3xl md:text-xl lg:text-2xl font-black leading-[1.1] tracking-tight text-white drop-shadow-lg">
+                                            {{ t.name }}
+                                        </h3>
+
+                                        <div class="mt-2 hidden sm:block h-[3px] w-14 rounded-full bg-gradient-to-r from-[#F5B82E] to-transparent transition-all duration-500 group-hover:w-24"></div>
+
+                                        <p v-if="t.qualification" class="mt-1.5 sm:mt-2 truncate text-[11px] sm:text-xs text-white/75">
+                                            {{ t.qualification }}
+                                        </p>
+
+                                        <!-- Contact pills -->
+                                        <div class="mt-2.5 sm:mt-3 flex flex-wrap items-center gap-1.5 sm:gap-2">
+                                            <a
+                                                v-if="t.phone"
+                                                :href="`tel:${t.phone}`"
+                                                :title="t.phone"
+                                                aria-label="Call"
+                                                class="fc-pill relative inline-flex items-center justify-center gap-1.5 rounded-full bg-white/15 h-8 w-8 sm:h-auto sm:w-auto sm:px-3 sm:py-1.5 text-[11px] sm:text-xs font-semibold text-white ring-1 ring-white/25 backdrop-blur-md transition hover:-translate-y-0.5 hover:bg-white hover:text-[#0B376B]"
+                                            >
+                                                <svg class="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                                                </svg>
+                                                <span class="hidden sm:inline">{{ t.phone }}</span>
+                                                <span class="fc-tip sm:hidden">{{ t.phone }}</span>
+                                            </a>
+
+                                            <a
+                                                v-if="t.phone"
+                                                :href="whatsappUrl(t.phone)"
+                                                target="_blank"
+                                                rel="noopener"
+                                                class="flex h-8 w-8 items-center justify-center rounded-full bg-[#25D366] text-white shadow-md shadow-[#25D366]/40 transition hover:-translate-y-0.5 hover:scale-110"
+                                                title="Chat on WhatsApp"
+                                                aria-label="WhatsApp"
+                                            >
+                                                <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
+                                                    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
+                                                </svg>
+                                            </a>
+
+                                            <a
+                                                v-if="t.email"
+                                                :href="`mailto:${t.email}`"
+                                                aria-label="Email"
+                                                class="fc-pill relative inline-flex max-w-full items-center justify-center gap-1.5 rounded-full bg-white/15 h-8 w-8 sm:h-auto sm:w-auto sm:px-3 sm:py-1.5 text-[11px] sm:text-xs font-semibold text-white ring-1 ring-white/25 backdrop-blur-md transition hover:-translate-y-0.5 hover:bg-white hover:text-[#0B376B]"
+                                                :title="t.email"
+                                            >
+                                                <svg class="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                                                </svg>
+                                                <span class="hidden truncate sm:inline">{{ t.email }}</span>
+                                                <span class="fc-tip sm:hidden">{{ t.email }}</span>
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         <div v-if="teachers.length === 0" class="rounded-3xl bg-white dark:bg-slate-900 border border-dashed border-slate-200 dark:border-slate-700 shadow-sm dark:shadow-black/20 p-12 text-center transition-colors duration-500">
                             <div class="mx-auto flex h-20 w-20 items-center justify-center rounded-3xl bg-[#EBF4FF] dark:bg-slate-800 mb-5 transition-colors duration-300">
                                 <svg class="h-10 w-10 text-[#0055B6] dark:text-[#60A5FA]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -371,7 +531,7 @@ const avgExperience = computed(() => {
                         <!-- TEACHER GRID (all cards equal height) -->
                         <div v-else class="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 items-stretch gap-4 sm:gap-5">
                             <div
-                                v-for="(teacher, index) in teachers"
+                                v-for="(teacher, index) in regularTeachers"
                                 :key="teacher.id"
                                 class="teacher-card group relative flex h-full flex-col overflow-hidden rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800 shadow-md shadow-slate-200/70 dark:shadow-black/30 hover:shadow-2xl hover:shadow-[#0055B6]/20 dark:hover:shadow-black/60 hover:-translate-y-2 hover:border-[#0055B6]/30 dark:hover:border-[#60A5FA]/40 transition-all duration-300"
                                 :style="{ animationDelay: `${Math.min(index, 11) * 60}ms` }"
@@ -510,9 +670,56 @@ const avgExperience = computed(() => {
     animation: cardFadeUp 0.6s ease-out both;
 }
 
+/* Featured (Chairman / Principal) animated gold border */
+@keyframes fcSpin {
+    to { transform: rotate(360deg); }
+}
+.fc-spin {
+    background: conic-gradient(from 0deg, transparent 0 55%, #F5B82E 75%, #FFD97A 85%, transparent 100%);
+    animation: fcSpin 6s linear infinite;
+}
+
+/* Mobile: show number / email tooltip on hover / tap of the icon */
+.fc-tip {
+    position: absolute;
+    left: 0;
+    bottom: calc(100% + 8px);
+    z-index: 30;
+    padding: 4px 10px;
+    border-radius: 10px;
+    background: #ffffff;
+    color: #0B376B;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.3;
+    white-space: nowrap;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(4px);
+    transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s;
+    pointer-events: none;
+}
+.fc-tip::after {
+    content: '';
+    position: absolute;
+    left: 12px;
+    top: 100%;
+    border: 5px solid transparent;
+    border-top-color: #ffffff;
+}
+.fc-pill:hover .fc-tip,
+.fc-pill:focus .fc-tip,
+.fc-pill:active .fc-tip {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
 @media (prefers-reduced-motion: reduce) {
     .hero-float,
     .hero-float-slow,
+    .fc-spin,
     .teacher-card {
         animation: none;
     }

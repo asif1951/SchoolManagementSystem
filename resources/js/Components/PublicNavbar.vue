@@ -116,9 +116,10 @@ const navLinkClass = (link) => {
             <div class="flex h-16 xs:h-[72px] sm:h-20 lg:h-[88px] items-center justify-between gap-2 xs:gap-3 sm:gap-4">
 
                 <!-- LEFT: LOGO + SCHOOL NAME -->
+                <!-- FIX: flex-shrink-0 removed, flex-1 added on mobile so the name gets space and can truncate -->
                 <Link
                     :href="route('home')"
-                    class="flex items-center gap-2 xs:gap-2.5 sm:gap-3 lg:gap-4 min-w-0 flex-shrink-0 group"
+                    class="flex items-center gap-2 xs:gap-2.5 sm:gap-3 lg:gap-4 min-w-0 flex-1 lg:flex-none group"
                 >
                     <div class="flex h-10 w-10 xs:h-11 xs:w-11 sm:h-14 sm:w-14 lg:h-16 lg:w-16 xl:h-[72px] xl:w-[72px] items-center justify-center rounded-xl xs:rounded-2xl bg-white dark:bg-slate-800 flex-shrink-0 overflow-hidden ring-1 ring-slate-200/60 dark:ring-slate-700/60 shadow-sm transition-all duration-300 group-hover:shadow-md group-hover:ring-[#0055B6]/30 dark:group-hover:ring-[#60A5FA]/30">
                         <img
@@ -135,8 +136,9 @@ const navLinkClass = (link) => {
                         </div>
                     </div>
 
-                    <div class="min-w-0 hidden min-[380px]:block">
-                        <h1 class="text-sm xs:text-base sm:text-lg lg:text-xl xl:text-2xl font-bold bg-gradient-to-r from-[#0055B6] to-[#1883DB] dark:from-[#60A5FA] dark:to-[#93C5FD] bg-clip-text text-transparent leading-tight truncate max-w-[140px] xs:max-w-[180px] sm:max-w-[240px] lg:max-w-none">
+                    <!-- FIX: "hidden min-[380px]:block" removed -> name is now always visible -->
+                    <div class="min-w-0 flex-1 lg:flex-none">
+                        <h1 class="text-sm xs:text-base sm:text-lg lg:text-xl xl:text-2xl font-bold bg-gradient-to-r from-[#0055B6] to-[#1883DB] dark:from-[#60A5FA] dark:to-[#93C5FD] bg-clip-text text-transparent leading-tight pb-0.5 truncate max-w-full sm:max-w-[240px] lg:max-w-none">
                             {{ schoolName }}
                         </h1>
                     </div>

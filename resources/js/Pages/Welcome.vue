@@ -458,8 +458,10 @@ onBeforeUnmount(() => {
         <div class="h-16 xs:h-[72px] sm:h-20 lg:h-[88px]" aria-hidden="true"></div>
 
         <!-- HERO SECTION -->
-        <section class="relative overflow-hidden">
-            <div class="absolute inset-0">
+        <!-- Mobile: image on top (no overlay), text below on brand background.
+             md and up: image fills the section, text sits on top with overlay (same as before). -->
+        <section class="relative overflow-hidden gradient-brand">
+            <div class="relative h-52 min-[400px]:h-60 sm:h-72 md:absolute md:inset-0 md:h-auto">
                 <img
                     v-if="heroImage"
                     :src="heroImage"
@@ -471,10 +473,10 @@ onBeforeUnmount(() => {
                     class="h-full w-full gradient-brand"
                 ></div>
 
-                <div class="absolute inset-0 hero-overlay"></div>
+                <div class="absolute inset-0 hero-overlay hidden md:block"></div>
             </div>
 
-            <div class="relative mx-auto max-w-[1320px] px-4 sm:px-6 lg:px-8 py-12 sm:py-16 md:py-20 lg:py-24 xl:py-32">
+            <div class="relative mx-auto max-w-[1320px] px-4 sm:px-6 lg:px-8 py-8 sm:py-10 md:py-20 lg:py-24 xl:py-32">
                 <div class="max-w-3xl text-left">
                     <p class="anim-up text-[10px] sm:text-xs lg:text-sm font-bold text-[#93C5FD] uppercase tracking-[0.2em] mb-2 sm:mb-3" style="animation-delay: 0.05s">
                         Welcome To
@@ -1650,6 +1652,10 @@ onBeforeUnmount(() => {
 .gradient-brand {
     background: linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-mid) 100%);
 }
+
+/* HERO OVERLAY
+   Only used on md and up (hidden on mobile via `hidden md:block`),
+   because on mobile the image is shown on its own above the text. */
 .hero-overlay {
     background: linear-gradient(to right, color-mix(in srgb, var(--brand-dark) 95%, transparent), color-mix(in srgb, var(--brand) 60%, transparent), transparent);
 }

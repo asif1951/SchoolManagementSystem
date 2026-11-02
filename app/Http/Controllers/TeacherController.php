@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Teacher;
 use App\Models\WebsiteHero; // ✅ নতুন যোগ করুন
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
@@ -136,14 +137,21 @@ class TeacherController extends Controller
             $query->where('department', $request->department);
         }
 
+        // Lower display order = first
         $teachers = $query
             ->orderBy('order', 'asc')
             ->orderBy('name', 'asc')
             ->get([
                 'id', 'name', 'designation', 'department',
                 'qualification', 'experience', 'photo',
-                'bio', 'phone', 'email',
+                'bio', 'phone', 'email', 'order',
             ]);
+
+        // ✅ Display Order 1 & 2 => featured cards (1 first, then 2)
+        $featured = $teachers
+            ->filter(fn ($t) => in_array((int) $t->order, [1, 2], true))
+            ->sortBy('order')
+            ->values();
 
         // Unique departments for filter dropdown
         $departments = Teacher::where('status', 'active')
@@ -156,8 +164,16 @@ class TeacherController extends Controller
         // ✅ Hero data from website_heroes table
         $hero = WebsiteHero::first();
 
+        // ✅ School name + logo from website_settings table
+        $settings   = DB::table('website_settings')->first();
+        $schoolName = $settings->school_name ?? config('app.name');
+        $schoolLogo = $settings->school_logo ?? null;
+
         return Inertia::render('Teachers', [
             'teachers'    => $teachers,
+            'featured'    => $featured, // ✅ Order 1 & 2
+            'schoolName'  => $schoolName, // ✅ School name
+            'schoolLogo'  => $schoolLogo, // ✅ School logo
             'departments' => $departments,
             'hero'        => $hero, // ✅ Hero ডেটা পাঠানো হলো
             'filters'     => [
