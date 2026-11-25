@@ -18,7 +18,12 @@ return new class extends Migration
         }
 
         Schema::table('students', function (Blueprint $table) {
-            $table->unsignedInteger('roll_no')->virtualAs("IF(roll_number REGEXP '^[0-9]{1,9}$', CAST(roll_number AS UNSIGNED), 0)");
+            // Digits-only test without a regex: MySQL 8 stores REGEXP as regexp_like(), which MariaDB cannot import.
+            // (Casting without the guard would raise "Truncated incorrect INTEGER value" for rolls like "12a" in strict mode.)
+            $table->unsignedInteger('roll_no')->virtualAs(
+                "IF(LENGTH(roll_number) BETWEEN 1 AND 9 AND LENGTH(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE("
+                . "roll_number,'0',''),'1',''),'2',''),'3',''),'4',''),'5',''),'6',''),'7',''),'8',''),'9','')) = 0, CAST(roll_number AS UNSIGNED), 0)"
+            );
             $table->index(['academic_year', 'class_id', 'roll_no'], 'idx_students_year_class_roll');
         });
     }
