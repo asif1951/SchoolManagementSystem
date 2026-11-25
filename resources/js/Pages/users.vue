@@ -20,6 +20,10 @@ import {
 
 // Props from controller
 const props = defineProps({
+    roles: {
+        type: Array,
+        default: () => []
+    },
     users: {
         type: Object,
         required: true
@@ -314,7 +318,9 @@ const getRoleBadge = (role) => {
     const colors = {
         admin: 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300',
         teacher: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300',
-        user: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300'
+        user: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300',
+        finance_head: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
+        cashier: 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300'
     };
     return colors[role] || 'bg-gray-100 text-gray-800 dark:bg-slate-700 dark:text-slate-300';
 };
@@ -488,9 +494,7 @@ watch([filterStatus, filterRole], () => {
                                 class="flex-1 sm:flex-none px-3.5 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50/70 dark:bg-slate-800/70 text-slate-700 dark:text-white text-sm font-medium min-w-0 sm:min-w-[140px] cursor-pointer shadow-sm hover:border-indigo-300 dark:hover:border-slate-600 focus:bg-white dark:focus:bg-slate-800 focus:ring-4 focus:ring-indigo-500/15 focus:border-indigo-500 outline-none transition-all duration-200"
                             >
                                 <option value="">All Roles</option>
-                                <option value="admin">Admin</option>
-                                <option value="teacher">Teacher</option>
-                                <option value="user">User</option>
+                                <option v-for="r in roles" :key="r.slug" :value="r.slug">{{ r.name }}</option>
                             </select>
                             <button
                                 @click="resetFilters"
@@ -589,7 +593,7 @@ watch([filterStatus, filterRole], () => {
                                     </td>
                                     <td class="px-5 py-3.5">
                                         <span class="text-sm text-slate-600 dark:text-slate-300 truncate">
-                                            {{ user.email }}
+                                            {{ user.email }}<span v-if="user.uid" class="ml-2 font-mono text-[11px] text-slate-400">ID {{ user.uid }}</span>
                                         </span>
                                     </td>
                                     <td class="px-5 py-3.5">
@@ -765,9 +769,7 @@ watch([filterStatus, filterRole], () => {
                                 :class="{ 'border-red-500 dark:border-red-500': errors.role }"
                             >
                                 <option value="">Select role</option>
-                                <option value="admin">Admin</option>
-                                <option value="teacher">Teacher</option>
-                                <option value="user">User</option>
+                                <option v-for="r in roles" :key="r.slug" :value="r.slug">{{ r.name }}</option>
                             </select>
                             <p v-if="errors.role" class="mt-1.5 text-sm text-red-500 dark:text-red-400">{{ errors.role }}</p>
                         </div>
@@ -882,9 +884,7 @@ watch([filterStatus, filterRole], () => {
                                 :class="{ 'border-red-500 dark:border-red-500': errors.role }"
                             >
                                 <option value="">Select role</option>
-                                <option value="admin">Admin</option>
-                                <option value="teacher">Teacher</option>
-                                <option value="user">User</option>
+                                <option v-for="r in roles" :key="r.slug" :value="r.slug">{{ r.name }}</option>
                             </select>
                             <p v-if="errors.role" class="mt-1.5 text-sm text-red-500 dark:text-red-400">{{ errors.role }}</p>
                         </div>

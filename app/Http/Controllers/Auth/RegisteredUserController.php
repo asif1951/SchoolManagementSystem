@@ -41,10 +41,6 @@ class RegisteredUserController extends Controller
         Auth::login($user);
 
         // ✅ Role অনুযায়ী redirect
-        if ($user->isStaff()) {
-            return redirect('/dashboard');   // admin + teacher
-        }
-
-        return redirect('/');                // normal user → home
+        return redirect($user->homePath());   // first page this role can open
     }
 }

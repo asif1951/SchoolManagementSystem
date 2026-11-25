@@ -11,7 +11,6 @@ use App\Models\SchoolClass;
 use App\Models\Gallery;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
 
 class HomeController extends Controller
@@ -186,45 +185,30 @@ class HomeController extends Controller
         $currentYear = (int) date('Y');
 
         $totalStudents = Cache::remember('home_total_students_' . $currentYear, 60, function () use ($currentYear) {
-            if (!Schema::hasTable('students')) return 0;
-            $query = DB::table('students');
-            if (Schema::hasColumn('students', 'academic_year')) {
-                $query->where('academic_year', (string) $currentYear);
-            }
-            if (Schema::hasColumn('students', 'status')) {
-                $query->where('status', 'active');
-            }
+            $query = DB::table('students')->whereNull('deleted_at');
+            $query->where('academic_year', (string) $currentYear);
+            $query->where('status', 'active');
             return $query->count();
         });
 
         $totalTeachers = Cache::remember('home_total_teachers', 60, function () {
-            if (!Schema::hasTable('teachers')) return 0;
             $query = DB::table('teachers');
-            if (Schema::hasColumn('teachers', 'status')) {
-                $query->where('status', 'active');
-            }
+            $query->where('status', 'active');
             return $query->count();
         });
 
         $totalClasses = Cache::remember('home_total_classes_' . $currentYear, 60, function () use ($currentYear) {
-            if (!Schema::hasTable('classes')) return 0;
             $query = DB::table('classes');
-            if (Schema::hasColumn('classes', 'status')) {
-                $query->where('status', 'active');
-            }
-            if (Schema::hasColumn('classes', 'academic_year')) {
-                $query->where('academic_year', (string) $currentYear);
-            }
+            $query->where('status', 'active');
+            $query->where('academic_year', (string) $currentYear);
             return $query->distinct()->count('class_name');
         });
 
         $yearsOfExcellence = Cache::remember('home_years_of_excellence_' . $currentYear, 60, function () use ($currentYear) {
             $establishedYear = 2009;
-            if (Schema::hasTable('website_settings')) {
-                $setting = DB::table('website_settings')->first();
-                if ($setting && !empty($setting->established_year)) {
-                    $establishedYear = (int) $setting->established_year;
-                }
+            $setting = DB::table('website_settings')->first();
+            if ($setting && !empty($setting->established_year)) {
+                $establishedYear = (int) $setting->established_year;
             }
             $diff = $currentYear - $establishedYear;
             return $diff > 0 ? $diff : 0;

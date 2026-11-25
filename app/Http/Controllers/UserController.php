@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Schema;
 
 class UserController extends Controller
 {
@@ -28,12 +27,12 @@ class UserController extends Controller
         }
 
         // ✅ Status filter
-        if ($request->filled('status') && $request->status !== '' && Schema::hasColumn('users', 'status')) {
+        if ($request->filled('status') && $request->status !== '') {
             $query->where('status', $request->status);
         }
 
         // ✅ Role filter
-        if ($request->filled('role') && $request->role !== '' && Schema::hasColumn('users', 'role')) {
+        if ($request->filled('role') && $request->role !== '') {
             $query->where('role', $request->role);
         }
 
@@ -71,6 +70,7 @@ class UserController extends Controller
         return inertia('users', [
             'users' => $users,
             'stats' => $stats,
+            'roles' => \App\Models\Role::query()->orderByDesc('is_system')->orderBy('name')->get(['slug', 'name']),
             'filters' => [
                 'search'        => $request->input('search', ''),
                 'status'        => $request->input('status', ''),
@@ -91,7 +91,7 @@ class UserController extends Controller
             'name'     => 'required|string|max:255',
             'email'    => 'required|email|unique:users,email',
             'password' => 'required|string|min:8',
-            'role'     => 'required|string|in:admin,teacher,user',
+            'role'     => ['required', 'string', \Illuminate\Validation\Rule::exists('roles', 'slug')],
             'status'   => 'required|string|in:active,inactive,pending,suspended',
         ]);
 
@@ -118,7 +118,7 @@ class UserController extends Controller
         $validated = $request->validate([
             'name'     => 'required|string|max:255',
             'email'    => 'required|email|unique:users,email,' . $id,
-            'role'     => 'required|string|in:admin,teacher,user',
+            'role'     => ['required', 'string', \Illuminate\Validation\Rule::exists('roles', 'slug')],
             'status'   => 'required|string|in:active,inactive,pending,suspended',
             'password' => 'nullable|string|min:8',
         ]);

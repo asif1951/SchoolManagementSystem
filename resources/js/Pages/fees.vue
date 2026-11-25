@@ -661,7 +661,7 @@ const monthsElapsed = computed(() =>
                                     </div>
                                     <span class="inline-flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700">{{ cls.subjects?.length || 0 }} subjects</span>
                                 </div>
-                                <h3 class="text-lg sm:text-xl font-bold text-emerald-900 dark:text-emerald-100 mb-1 truncate">{{ cls.class_name }}</h3>
+                                <h3 class="text-lg sm:text-xl font-bold text-emerald-900 dark:text-emerald-100 mb-1 truncate">{{ cls.class_label || cls.class_name }}</h3>
                                 <p class="text-sm font-semibold text-teal-600 dark:text-teal-400 mb-1">Section: {{ cls.section || 'N/A' }}</p>
                                 <p class="text-xs text-emerald-500 dark:text-emerald-400 mb-3 flex items-center gap-1 font-medium">
                                     <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -707,7 +707,7 @@ const monthsElapsed = computed(() =>
                         </div>
                         <div class="min-w-0">
                             <h1 class="text-lg sm:text-2xl font-bold bg-gradient-to-r from-emerald-800 to-teal-800 dark:from-emerald-300 dark:to-teal-300 bg-clip-text text-transparent truncate">
-                                {{ classInfo.class_name }} — {{ classInfo.section || 'N/A' }}
+                                {{ classInfo.class_label || classInfo.class_name }} — {{ classInfo.section_label || classInfo.section || 'N/A' }}
                             </h1>
                             <p class="text-xs sm:text-sm text-emerald-600 dark:text-emerald-400 mt-0.5">
                                 Academic Year: {{ classInfo.academic_year }}

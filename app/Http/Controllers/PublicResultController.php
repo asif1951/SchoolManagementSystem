@@ -7,7 +7,6 @@ use App\Models\SchoolClass;
 use App\Models\WebsiteHero;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
 
 class PublicResultController extends Controller
@@ -99,28 +98,25 @@ class PublicResultController extends Controller
         }
 
         // ============================================================
-        // STEP 3: Find matching students
+        // STEP 3: Find matching students — exact class rows for this year
+        //         (name + optional section), looked up by roll or student id only.
         // ============================================================
-        $studentRecords = collect();
+        $classIds = SchoolClass::query()
+            ->where('class_name', $selectedClassName)
+            ->where('academic_year', $year)
+            ->when($selectedSection, fn ($q) => $q->where('section', $selectedSection))
+            ->pluck('id');
 
-        if (Schema::hasTable('students')) {
-            $q = DB::table('students')
+        $studentRecords = $classIds->isEmpty()
+            ? collect()
+            : DB::table('students')
+                ->whereNull('deleted_at')
+                ->whereIn('class_id', $classIds)
                 ->where(function ($sub) use ($rollInput) {
                     $sub->where('roll_number', $rollInput)
-                        ->orWhere('student_id', $rollInput)
-                        ->orWhere('id', $rollInput);
-                });
-
-            if ($selectedClassName && Schema::hasColumn('students', 'class')) {
-                $q->where('class', $selectedClassName);
-            }
-
-            if ($selectedSection && Schema::hasColumn('students', 'section')) {
-                $q->where('section', $selectedSection);
-            }
-
-            $studentRecords = $q->get();
-        }
+                        ->orWhere('student_id', $rollInput);
+                })
+                ->get();
 
         if ($studentRecords->isEmpty()) {
             return response()->json([
@@ -133,23 +129,17 @@ class PublicResultController extends Controller
 
         // ============================================================
         // STEP 4: Find the student whose results EXACTLY match
-        //         year + exam (strict match)
+        //         year + exam (strict match) — one query for all candidates
         // ============================================================
-        $foundStudent = null;
-        $foundResults = null;
+        $resultsByStudent = ResultInput::query()
+            ->whereIn('student_id', $studentRecords->pluck('id'))
+            ->where('academic_year', $year)
+            ->where('exam_type', $exam)
+            ->get()
+            ->groupBy('student_id');
 
-        foreach ($studentRecords as $student) {
-            $results = ResultInput::where('student_id', $student->id) // ✅ এখানে আপডেট
-                ->where('academic_year', $year)
-                ->where('exam_type', $exam)
-                ->get();
-
-            if ($results->isNotEmpty()) {
-                $foundStudent = $student;
-                $foundResults = $results;
-                break;
-            }
-        }
+        $foundStudent = $studentRecords->first(fn ($st) => $resultsByStudent->has($st->id));
+        $foundResults = $foundStudent ? $resultsByStudent->get($foundStudent->id) : null;
 
         if (!$foundStudent || !$foundResults) {
             return response()->json([
@@ -163,35 +153,21 @@ class PublicResultController extends Controller
         // ============================================================
         $studentName = $foundStudent->student_name ?? 'Student';
         $studentRoll = $foundStudent->roll_number ?? $rollInput;
-        $studentClass = $foundStudent->class ?? null;
-        $studentSection = $foundStudent->section ?? null;
-
-        $class = SchoolClass::where('class_name', $studentClass)
-            ->when($studentSection, fn($q, $s) => $q->where('section', $s))
-            ->first()
-            ?? SchoolClass::find($classId);
+        $class = SchoolClass::find($foundStudent->class_id) ?? $selectedClass;
+        $studentClass   = $class?->class_name;
+        $studentSection = $class?->section;
 
         $fullMarks = self::SUBJECT_FULL_MARKS;
 
         // ✅ SUBJECT-WISE HIGHEST — across the whole class
-        $subjectHighest = [];
-        if ($studentClass) {
-            $highestQuery = ResultInput::query() // ✅ এখানে আপডেট
-                ->join('students', 'students.id', '=', 'results.student_id')
-                ->where('students.class', $studentClass)
-                ->where('results.academic_year', $year)
-                ->where('results.exam_type', $exam);
-
-            if ($studentSection) {
-                $highestQuery->where('students.section', $studentSection);
-            }
-
-            $subjectHighest = $highestQuery
-                ->selectRaw('results.subject, MAX(results.marks) as highest')
-                ->groupBy('results.subject')
-                ->pluck('highest', 'subject')
-                ->toArray();
-        }
+        $subjectHighest = ResultInput::query()
+            ->where('class_id', $foundStudent->class_id)
+            ->where('academic_year', $year)
+            ->where('exam_type', $exam)
+            ->selectRaw('subject, MAX(marks) as highest')
+            ->groupBy('subject')
+            ->pluck('highest', 'subject')
+            ->toArray();
 
         // ✅ SUBJECTS with per-subject grade, gpa, highest
         $subjects = $foundResults->map(function ($r) use ($fullMarks, $subjectHighest) {
@@ -229,8 +205,8 @@ class PublicResultController extends Controller
         // ✅ RANKING — compute across ALL students in the class
         // ============================================================
         $allClassStudentIds = DB::table('students')
-            ->where('class', $studentClass)
-            ->when($studentSection, fn($q, $s) => $q->where('section', $s))
+            ->whereNull('deleted_at')
+            ->where('class_id', $foundStudent->class_id)
             ->pluck('id')
             ->toArray();
 

@@ -81,37 +81,81 @@ const schoolLogo = computed(() => {
 // ============================================================
 // NAVIGATION
 // ============================================================
+// Each item names the ability it needs (see config/abilities.php).
+// A parent with no visible children is hidden.
 const navigation = [
-    { name: 'Dashboard', icon: 'dashboard', route: '/dashboard' },
-    { name: 'Add Students', icon: 'students', route: '/students' },
-    { name: 'Student Management', icon: 'student-management', route: '/studentmanagement' },
-    { name: 'Student Result', icon: 'student-result', route: '/student-results' },
+    { name: 'Dashboard', icon: 'dashboard', route: '/dashboard', ability: 'dashboard.view' },
+    {
+        name: 'Student Module',
+        icon: 'graduation',
+        route: '/student-module/students',
+        ability: 'students.view',
+        children: [
+            { name: 'Student Entry', icon: 'students', route: '/student-module/students', ability: 'students.view' },
+            { name: 'Quick Student Entry', icon: 'students', route: '/student-module/students/quick', ability: 'students.create' },
+            { name: 'Import Student', icon: 'students', route: '/student-module/import', ability: 'students.import_students' },
+            { name: 'Change Requests', icon: 'students', route: '/student-module/change-requests', ability: 'students.approve_change' },
+            { name: 'Student Promotion (Auto)', icon: 'students', route: '/student-module/promotion/auto', ability: 'students.promote_students' },
+            { name: 'Student Promotion (Manual)', icon: 'students', route: '/student-module/promotion/manual', ability: 'students.promote_students' },
+            { name: 'Student Report', icon: 'students', route: '/student-module/reports', ability: 'students.reports' },
+            { name: 'Student Statistics Report', icon: 'students', route: '/student-module/statistics', ability: 'students.reports' },
+            { name: 'Student Subjects', icon: 'students', route: '/student-module/subjects', ability: 'students.manage_subjects' },
+            { name: 'Online Admission Report', icon: 'students', route: '/student-module/online-admissions', ability: 'students.online_admission' },
+            { name: 'Admission Payment Summary', icon: 'students', route: '/student-module/admission-payments', ability: 'students.admission_payments' },
+            { name: 'Certificate Register', icon: 'students', route: '/student-module/certificates', ability: 'students.view_certificates' },
+            { name: 'Transfers', icon: 'students', route: '/student-module/transfers', ability: ['students.request_transfer', 'students.approve_transfer'] },
+            { name: 'Student Image Upload', icon: 'students', route: '/student-module/images', ability: 'students.manage_images' },
+        ]
+    },
+    { name: 'Student Result', icon: 'student-result', route: '/student-results', ability: 'results.view' },
     {
         name: 'Classes',
         icon: 'classes',
         route: '/classes',
+        ability: 'classes.view',
         children: [
-            { name: 'Classes Management', icon: 'classes', route: '/classesmanagement' },
-            { name: 'Create Class', icon: 'create', route: '/classes/create' },
+            { name: 'Classes Management', icon: 'classes', route: '/classesmanagement', ability: 'classes.view' },
+            { name: 'Create Class', icon: 'create', route: '/classes/create', ability: 'classes.manage' },
+            { name: 'Subject Teachers', icon: 'users', route: '/subject-teachers', ability: 'classes.manage' },
         ]
     },
-    { name: 'Users', icon: 'users', route: '/users' },
-    { name: 'Attendance', icon: 'attendance', route: '/attendance' },
-    { name: 'Gallery', icon: 'gallery', route: '/gallery' },
-    { name: 'Result Input', icon: 'results', route: '/results' },
+    {
+        name: 'Routine',
+        icon: 'attendance',
+        route: '/routine',
+        ability: ['routine.view', 'routine.manage'],
+        children: [
+            { name: 'Class Routines', icon: 'classes', route: '/routine', ability: ['routine.view', 'routine.manage'] },
+            { name: 'Teacher Routines', icon: 'users', route: '/routine/teachers', ability: ['routine.view', 'routine.manage'] },
+            { name: 'Auto-generate', icon: 'classes', route: '/routine/generate', ability: 'routine.manage' },
+            { name: 'Periods & Days', icon: 'classes', route: '/routine/periods', ability: 'routine.manage' },
+        ]
+    },
+    { name: 'Exams', icon: 'results', route: '/exams', ability: 'exams.manage' },
+    { name: 'Subjects', icon: 'classes', route: '/subjects', ability: 'subjects.manage' },
+    { name: 'Study Groups', icon: 'classes', route: '/study-groups', ability: 'subjects.manage' },
+    { name: 'Shifts & Mediums', icon: 'classes', route: '/class-settings', ability: 'classes.manage' },
+    { name: 'Curriculum', icon: 'classes', route: '/curriculum', ability: 'subjects.manage' },
+    { name: 'Users', icon: 'users', route: '/users', ability: 'users.manage' },
+    { name: 'Roles & Permissions', icon: 'users', route: '/roles', ability: 'roles.manage' },
+    { name: 'Attendance', icon: 'attendance', route: '/attendance', ability: 'attendance.view' },
+    { name: 'Gallery', icon: 'gallery', route: '/gallery', ability: 'gallery.manage' },
+    { name: 'Result Input', icon: 'results', route: '/results', ability: 'results.view' },
     {
         name: 'Fees',
         icon: 'fees',
         route: '/fees',
+        ability: 'fees.view',
         children: [
-            { name: 'Collect Fees ', icon: 'fees', route: '/fees' },
-            { name: 'Create Fee', icon: 'create-fee', route: '/fees/create' },
+            { name: 'Collect Fees ', icon: 'fees', route: '/fees', ability: 'fees.view' },
+            { name: 'Create Fee', icon: 'create-fee', route: '/fees/create', ability: 'fees.manage_structures' },
         ]
     },
     {
         name: 'Website Management',
         icon: 'website',
         route: '/website-management',
+        ability: 'website.manage',
         children: [
             { name: 'Website Settings', icon: 'website-settings', route: '/website-management/settings' },
             { name: 'Home Page', icon: 'home-page', route: '/website-management/home-page' },
@@ -126,24 +170,30 @@ const navigation = [
 ];
 
 // ============================================================
-// ✅ ROLE-BASED FILTER
-// - admin   → সব menu
-// - teacher → কিছু hide
-// - user    → কোনো sidebar menu নেই (sidebar পুরো hide)
+// ✅ ABILITY-BASED MENU
+// The server shares auth.abilities; this only decides what to SHOW.
+// (Every route is protected again on the server.)
 // ============================================================
-const filteredNavigation = computed(() => {
-    if (isAdmin.value) {
-        return navigation;
-    }
+const abilities = computed(() => page.props.auth?.abilities ?? []);
 
-    // ✅ user → empty menu
+const can = (key) => {
+    if (!key) return true;
+    const list = abilities.value;
+    return list.includes('*') || list.includes(key) || list.includes(key + ':own');
+};
+
+const filteredNavigation = computed(() => {
+    // plain public "user" accounts have no staff menu at all
     if (isUser.value) {
         return [];
     }
 
-    const hiddenForTeacher = ['Dashboard', 'Users', 'Website Management'];
+    const walk = (items) => items
+        .filter((item) => (Array.isArray(item.ability) ? item.ability.some((a) => can(a)) : can(item.ability)))
+        .map((item) => (item.children ? { ...item, children: walk(item.children) } : item))
+        .filter((item) => !item.children || item.children.length > 0);
 
-    return navigation.filter(item => !hiddenForTeacher.includes(item.name));
+    return walk(navigation);
 });
 
 // ============================================================
@@ -322,10 +372,9 @@ const closeMobileMenu = () => {
             class="
                 fixed inset-y-0 left-0 z-50
                 flex w-[280px] flex-col
-                bg-gradient-to-b from-slate-950 via-slate-950 to-[#0a1224]
+                bg-brand-900
                 text-white
-                border-r border-white/5
-                shadow-2xl
+                border-r border-black/20
                 transition-transform duration-300 ease-in-out
                 lg:translate-x-0
             "
@@ -338,10 +387,8 @@ const closeMobileMenu = () => {
 
             <!-- SIDEBAR HEADER -->
             <div class="relative flex h-20 shrink-0 items-center justify-between border-b border-white/10 px-5 sm:px-6">
-                <div class="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-blue-400/60 to-transparent"></div>
-
                 <div class="flex items-center gap-3 min-w-0">
-                    <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white ring-1 ring-white/20 shadow-lg shadow-blue-600/30 overflow-hidden">
+                    <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-white overflow-hidden">
                         <img v-if="schoolLogo" :src="schoolLogo" :alt="schoolName" class="h-full w-full object-contain p-1" />
                         <ApplicationLogo v-else class="h-7 w-auto fill-current text-blue-600" />
                     </div>
@@ -350,7 +397,7 @@ const closeMobileMenu = () => {
                         <h1 class="truncate text-base font-bold tracking-tight">
                             {{ schoolName }}
                         </h1>
-                        <p class="mt-0.5 truncate text-[11px] font-medium uppercase tracking-wider text-slate-500">
+                        <p class="mt-0.5 truncate text-[11px] font-medium uppercase tracking-wider text-brand-300">
                             Management System
                         </p>
                     </div>
@@ -358,7 +405,7 @@ const closeMobileMenu = () => {
 
                 <button
                     type="button"
-                    class="rounded-lg p-2 text-slate-400 transition hover:bg-white/10 hover:text-white lg:hidden"
+                    class="rounded-lg p-2 text-brand-200 transition hover:bg-white/10 hover:text-white lg:hidden"
                     @click="closeMobileMenu"
                 >
                     <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -374,11 +421,11 @@ const closeMobileMenu = () => {
                 class="sidebar-scroll flex-1 overflow-y-auto px-3 py-5 sm:px-4 sm:py-6"
             >
                 <div class="mb-4 flex items-center justify-between px-3">
-                    <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">
+                    <p class="text-[10px] font-semibold uppercase tracking-[0.16em] text-brand-300">
                         Main Menu
                     </p>
 
-                    <span class="rounded-md border border-blue-500/20 bg-blue-500/10 px-2 py-1 text-[9px] font-semibold text-blue-400 capitalize">
+                    <span class="rounded border border-white/15 bg-white/5 px-2 py-0.5 text-[9px] font-semibold text-brand-200 uppercase">
                         {{ isAdmin ? 'ADMIN' : (user?.role ?? 'USER') }}
                     </span>
                 </div>
@@ -390,17 +437,17 @@ const closeMobileMenu = () => {
                         <button
                             type="button"
                             @click="selectMenu(item)"
-                            class="group relative flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm font-medium transition-all duration-200"
+                            class="group relative flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm font-medium transition-colors duration-150"
                             :class="
                                 isLeafActive(item)
-                                    ? 'bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-lg shadow-blue-900/30'
+                                    ? 'bg-white/15 text-white'
                                     : isParentActive(item)
-                                        ? 'bg-white/[0.07] text-white'
-                                        : 'text-slate-400 hover:bg-white/5 hover:text-white'
+                                        ? 'bg-white/10 text-white'
+                                        : 'text-brand-200 hover:bg-white/5 hover:text-white'
                             "
                         >
                             <span
-                                class="absolute -left-3 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r-full bg-blue-400 transition-all duration-300 sm:-left-4"
+                                class="absolute -left-3 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r bg-brand-300 transition-all duration-300 sm:-left-4"
                                 :class="(isLeafActive(item) || isParentActive(item)) ? 'opacity-100' : 'opacity-0'"
                             ></span>
 
@@ -412,11 +459,14 @@ const closeMobileMenu = () => {
                                             ? 'bg-white/20 text-white'
                                             : isParentActive(item)
                                                 ? 'bg-blue-500/20 text-blue-300'
-                                                : 'bg-white/5 text-slate-400 group-hover:bg-white/10 group-hover:text-white'
+                                                : 'bg-white/5 text-brand-200 group-hover:bg-white/10 group-hover:text-white'
                                     "
                                 >
                                     <svg v-if="item.icon === 'dashboard'" class="h-[18px] w-[18px] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 12l9-9 9 9M5 10v10h5v-6h4v6h5V10" />
+                                    </svg>
+                                    <svg v-else-if="item.icon === 'graduation'" class="h-[18px] w-[18px] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 3L1.5 8.25 12 13.5l8.5-4.25V15m-14-4.4V16c0 1.4 2.9 3 6.5 3s6.5-1.6 6.5-3v-5.4" />
                                     </svg>
                                     <svg v-else-if="item.icon === 'students'" class="h-[18px] w-[18px] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M17 20h5v-2a4 4 0 00-4-4h-1M9 20H4v-2a4 4 0 014-4h1m8-5a4 4 0 11-8 0 4 4 0 018 0zm-6 5a4 4 0 014-4" />
@@ -469,7 +519,7 @@ const closeMobileMenu = () => {
                                 class="h-4 w-4 shrink-0 transition-transform duration-300"
                                 :class="[
                                     isMenuExpanded(item.name) ? 'rotate-180' : '',
-                                    isParentActive(item) ? 'text-blue-300' : 'text-slate-500 group-hover:text-slate-300'
+                                    isParentActive(item) ? 'text-white' : 'text-brand-300 group-hover:text-brand-100'
                                 ]"
                                 fill="none"
                                 stroke="currentColor"
@@ -495,13 +545,13 @@ const closeMobileMenu = () => {
                                         class="group/child relative flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition-all duration-200"
                                         :class="
                                             activeMenu === child.name
-                                                ? 'bg-blue-500/15 font-medium text-blue-300'
-                                                : 'text-slate-400 hover:bg-white/5 hover:text-white'
+                                                ? 'bg-white/15 font-medium text-white'
+                                                : 'text-brand-200 hover:bg-white/5 hover:text-white'
                                         "
                                     >
                                         <span
-                                            class="absolute -left-[1.04rem] top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full ring-2 ring-slate-950 transition-colors duration-200"
-                                            :class="activeMenu === child.name ? 'bg-blue-400' : 'bg-slate-600 group-hover/child:bg-slate-400'"
+                                            class="absolute -left-[1.04rem] top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full ring-2 ring-brand-900 transition-colors duration-200"
+                                            :class="activeMenu === child.name ? 'bg-brand-300' : 'bg-brand-700 group-hover/child:bg-brand-300'"
                                         ></span>
 
                                         <svg v-if="child.icon === 'classes'" class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -561,7 +611,7 @@ const closeMobileMenu = () => {
             <div class="border-t border-white/10 p-3 sm:p-4">
                 <div class="flex items-center gap-3 rounded-xl border border-white/5 bg-white/5 p-3 transition-colors duration-200 hover:bg-white/[0.08]">
                     <div class="relative shrink-0">
-                        <div class="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-sm font-bold text-white ring-2 ring-white/10">
+                        <div class="flex h-10 w-10 items-center justify-center rounded-full bg-brand-600 text-sm font-semibold text-white ring-1 ring-white/20">
                             {{ user?.name?.charAt(0)?.toUpperCase() ?? 'U' }}
                         </div>
                         <span class="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-emerald-400 ring-2 ring-slate-950"></span>
@@ -571,7 +621,7 @@ const closeMobileMenu = () => {
                         <p class="truncate text-sm font-semibold text-white">
                             {{ user?.name ?? 'User' }}
                         </p>
-                        <p class="truncate text-xs text-slate-500">
+                        <p class="truncate text-xs text-brand-300">
                             {{ user?.email ?? 'user@example.com' }}
                         </p>
                     </div>
@@ -671,7 +721,7 @@ const closeMobileMenu = () => {
                                 @click.stop="toggleUserDropdown"
                                 class="flex items-center gap-2 rounded-xl px-1.5 py-1 transition hover:bg-slate-50 dark:hover:bg-slate-800 focus:outline-none sm:gap-3 sm:px-2"
                             >
-                                <div class="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-sm font-bold text-white shadow-md sm:h-10 sm:w-10">
+                                <div class="flex h-9 w-9 items-center justify-center rounded-full bg-brand-700 text-sm font-semibold text-white sm:h-10 sm:w-10">
                                     {{ user?.name?.charAt(0)?.toUpperCase() ?? 'U' }}
                                 </div>
 

@@ -9,6 +9,15 @@ class WebsiteSetting extends Model
 {
     use HasFactory;
 
+    /** Saving or deleting the settings clears the copy the whole site reads from (homepage, login, admin layout). */
+    protected static function booted(): void
+    {
+        $forget = fn () => cache()->forget('website_settings');
+
+        static::saved($forget);
+        static::deleted($forget);
+    }
+
     protected $fillable = [
         // School Info
         'school_name',
@@ -16,6 +25,7 @@ class WebsiteSetting extends Model
         'established_year',
         'short_description',
         'school_logo',
+        'print_color',
         'favicon',
 
         // Contact
@@ -40,8 +50,13 @@ class WebsiteSetting extends Model
     /**
      * Always return a single settings row.
      */
+    /**
+     * The school's one settings row (made on first use). Looked up as "the first row" rather than
+     * "id 1": `id` cannot be mass-assigned, so an id-1 lookup creates a fresh row on every call as
+     * soon as the table's counter has moved past 1.
+     */
     public static function current(): self
     {
-        return static::firstOrCreate(['id' => 1]);
+        return static::query()->orderBy('id')->first() ?? static::create([])->fresh();
     }
 }

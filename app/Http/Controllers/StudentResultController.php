@@ -28,7 +28,7 @@ class StudentResultController extends Controller
         $selectedSection   = (string) $request->input('section', '');
 
         // ⭐ Ensure classes exist for this year (auto-copy from most recent year)
-        $this->ensureClassesForYear((int) $selectedYear);
+        SchoolClass::ensureForYear((int) $selectedYear);
 
         // Available years from classes table
         $availableYears = SchoolClass::query()
@@ -49,13 +49,23 @@ class StudentResultController extends Controller
             ->orderBy('class_name')
             ->orderBy('section');
 
-        if (! $isAdmin) {
-            $classQuery->where('class_teacher', $user->name);
-        }
+        $classQuery->visibleTo($user, 'results.compile');
 
         // 🆕 Class filter (backend)
         if ($selectedClassName !== '') {
             $classQuery->where('class_name', $selectedClassName);
+        }
+
+        if ($request->filled('group')) {
+            $classQuery->where('study_group_id', (int) $request->input('group'));
+        }
+
+        if ($request->filled('shift')) {
+            $classQuery->where('shift_id', (int) $request->input('shift'));
+        }
+
+        if ($request->filled('medium')) {
+            $classQuery->where('medium_id', (int) $request->input('medium'));
         }
 
         // 🆕 Section filter (backend) — '__none__' = classes without section
@@ -73,28 +83,29 @@ class StudentResultController extends Controller
         [$filterClassNames, $filterSections, $filterHasNoSection] = $this->buildClassFilterOptions(
             $selectedYear,
             $selectedClassName,
-            $isAdmin ? null : $user->name
+            $user->classScope('results.compile')
         );
 
-        $classes = $classQuery->get()->map(function ($class) {
-            $studentQuery = Student::where('class', $class->class_name)
-                ->where('academic_year', $class->academic_year)
-                ->where('status', 'active');
+        $classRows = $classQuery->get();
+        $studentCounts = Student::query()
+            ->whereIn('class_id', $classRows->pluck('id'))
+            ->where('status', 'active')
+            ->selectRaw('class_id, COUNT(*) AS total')
+            ->groupBy('class_id')
+            ->pluck('total', 'class_id');
 
-            if ($class->section === null || $class->section === '') {
-                $studentQuery->where(function ($q) {
-                    $q->whereNull('section')->orWhere('section', '');
-                });
-            } else {
-                $studentQuery->where('section', $class->section);
-            }
-
-            $studentCount = $studentQuery->count();
+        $classes = $classRows->map(function ($class) use ($studentCounts) {
+            $studentCount = (int) ($studentCounts[$class->id] ?? 0);
 
             return [
                 'id' => $class->id,
                 'class_name' => $class->class_name,
+                'class_label' => $class->class_label,
+                'section_label' => $class->section_label,
                 'section' => $class->section,
+                'group' => $class->group_name,
+                'shift' => $class->shift_name,
+                'medium' => $class->medium_name,
                 'academic_year' => $class->academic_year,
                 'class_teacher' => $class->class_teacher,
                 'subjects' => $class->subjects ?? [],
@@ -116,7 +127,13 @@ class StudentResultController extends Controller
             ],
             'totalStudents' => 0,
             'examTypes' => $this->getExamTypes(),
+            'groups' => \App\Models\StudyGroup::active()->ordered()->get(['id', 'name']),
+            'shifts' => \App\Models\Shift::active()->ordered()->get(['id', 'name']),
+            'mediums' => \App\Models\Medium::active()->ordered()->get(['id', 'name']),
             'filters' => [
+                'group' => (string) $request->input('group', ''),
+                'shift' => (string) $request->input('shift', ''),
+                'medium' => (string) $request->input('medium', ''),
                 'academic_year' => $selectedYear,
                 'exam_type' => 'final',
                 'search' => '',
@@ -143,12 +160,12 @@ class StudentResultController extends Controller
     {
         $class = SchoolClass::findOrFail($classId);
 
-        $this->ensureClassesForYear((int) $class->academic_year);
+        SchoolClass::ensureForYear((int) $class->academic_year);
 
         $user = Auth::user();
         $isAdmin = $user->role === 'admin';
 
-        if (! $isAdmin && $class->class_teacher !== $user->name) {
+        if (! $user->canDo('results.compile', $class)) {
             abort(403, 'You are not authorized for this class.');
         }
 
@@ -164,29 +181,28 @@ class StudentResultController extends Controller
             ->orderBy('class_name')
             ->orderBy('section');
 
-        if (! $isAdmin) {
-            $classQuery->where('class_teacher', $user->name);
-        }
+        $classQuery->visibleTo($user, 'results.compile');
 
-        $classes = $classQuery->get()->map(function ($c) {
-            $studentQuery = Student::where('class', $c->class_name)
-                ->where('academic_year', $c->academic_year)
-                ->where('status', 'active');
+        $classRows = $classQuery->get();
+        $studentCounts = Student::query()
+            ->whereIn('class_id', $classRows->pluck('id'))
+            ->where('status', 'active')
+            ->selectRaw('class_id, COUNT(*) AS total')
+            ->groupBy('class_id')
+            ->pluck('total', 'class_id');
 
-            if ($c->section === null || $c->section === '') {
-                $studentQuery->where(function ($q) {
-                    $q->whereNull('section')->orWhere('section', '');
-                });
-            } else {
-                $studentQuery->where('section', $c->section);
-            }
-
-            $studentCount = $studentQuery->count();
+        $classes = $classRows->map(function ($c) use ($studentCounts) {
+            $studentCount = (int) ($studentCounts[$c->id] ?? 0);
 
             return [
                 'id' => $c->id,
                 'class_name' => $c->class_name,
+                'class_label' => $c->class_label,
+                'section_label' => $c->section_label,
                 'section' => $c->section,
+                'group' => $c->group_name,
+                'shift' => $c->shift_name,
+                'medium' => $c->medium_name,
                 'academic_year' => $c->academic_year,
                 'class_teacher' => $c->class_teacher,
                 'subjects' => $c->subjects ?? [],
@@ -196,33 +212,15 @@ class StudentResultController extends Controller
 
         // Unfiltered total
         $totalStudentsQuery = Student::query()
-            ->where('class', $class->class_name)
-            ->where('academic_year', $class->academic_year)
+            ->where('class_id', $class->id)
             ->where('status', 'active');
-
-        if ($class->section === null || $class->section === '') {
-            $totalStudentsQuery->where(function ($q) {
-                $q->whereNull('section')->orWhere('section', '');
-            });
-        } else {
-            $totalStudentsQuery->where('section', $class->section);
-        }
 
         $totalStudents = $totalStudentsQuery->count();
 
         // Students query
         $studentsQuery = Student::query()
-            ->where('class', $class->class_name)
-            ->where('academic_year', $class->academic_year)
+            ->where('class_id', $class->id)
             ->where('status', 'active');
-
-        if ($class->section === null || $class->section === '') {
-            $studentsQuery->where(function ($q) {
-                $q->whereNull('section')->orWhere('section', '');
-            });
-        } else {
-            $studentsQuery->where('section', $class->section);
-        }
 
         if (! empty($search)) {
             $studentsQuery->where(function ($q) use ($search) {
@@ -248,7 +246,7 @@ class StudentResultController extends Controller
 
         $subjectHighest = [];
         if (! empty($studentIds)) {
-            $subjectHighest = ResultInput::whereIn('student_id', $studentIds) // ✅ এখানে আপডেট
+            $subjectHighest = ResultInput::where('class_id', $class->id) // whole class, not just this page
                 ->where('exam_type', $examType)
                 ->where('academic_year', $class->academic_year)
                 ->selectRaw('subject, MAX(marks) as highest')
@@ -268,10 +266,10 @@ class StudentResultController extends Controller
 
         $totalsFromDb = [];
         if (! empty($studentIds)) {
-            $totalsFromDb = ResultInput::whereIn('student_id', $studentIds) // ✅ এখানে আপডেট
+            $totalsFromDb = ResultInput::where('class_id', $class->id) // whole class, not just this page
                 ->where('exam_type', $examType)
                 ->where('academic_year', $class->academic_year)
-                ->selectRaw('student_id, MAX(total_marks) as total')
+                ->selectRaw('student_id, SUM(marks) as total')
                 ->groupBy('student_id')
                 ->pluck('total', 'student_id')
                 ->toArray();
@@ -279,7 +277,7 @@ class StudentResultController extends Controller
 
         $failCounts = [];
         if (! empty($studentIds)) {
-            $failCounts = ResultInput::whereIn('student_id', $studentIds) // ✅ এখানে আপডেট
+            $failCounts = ResultInput::where('class_id', $class->id) // whole class, not just this page
                 ->where('exam_type', $examType)
                 ->where('academic_year', $class->academic_year)
                 ->where('grade', 'F')
@@ -321,8 +319,17 @@ class StudentResultController extends Controller
             $position++;
         }
 
+        // One query for all future-year copies of this page's students
+        $futureByStudentId = Student::query()
+            ->with('schoolClass:id,class_name,section')
+            ->where('academic_year', '>', $class->academic_year)
+            ->whereIn('student_id', $currentPageStudents->pluck('student_id')->unique()->values())
+            ->orderByDesc('academic_year')
+            ->get(['id', 'student_id', 'academic_year', 'class_id'])
+            ->groupBy('student_id');
+
         // Build students data with results
-        $studentsData = $currentPageStudents->map(function ($student) use ($allResults, $classSubjects, $subjectHighest, $totalsFromDb, $ranks) {
+        $studentsData = $currentPageStudents->map(function ($student) use ($allResults, $classSubjects, $subjectHighest, $totalsFromDb, $ranks, $futureByStudentId, $class) {
             $studentResults = $allResults->get($student->id, collect())->keyBy('subject');
 
             $subjectData = [];
@@ -376,24 +383,19 @@ class StudentResultController extends Controller
                 $overallLetter = '-';
             }
 
-            // ⭐ Check if this student has already been shifted to a future year
-            $nextYearShifted = Student::where('academic_year', '>', $student->academic_year)
-                ->where('student_name', $student->student_name)
-                ->where(function ($q) use ($student) {
-                    if (! empty($student->father_name)) {
-                        $q->where('father_name', $student->father_name);
-                    }
-                })
-                ->orderByDesc('academic_year')
-                ->first();
+            // ⭐ Already shifted to a future year? (looked up once for the whole page)
+            $nextYearShifted = $futureByStudentId->get($student->student_id)?->first();
 
             return [
                 'id' => $student->id,
                 'student_id' => $student->student_id,
                 'student_name' => $student->student_name,
                 'student_photo' => $student->student_photo,
-                'class' => $student->class,
-                'section' => $student->section,
+                'class' => $class->class_name,
+                'section' => $class->section,
+                'group' => $class->group_name,
+                'shift' => $class->shift_name,
+                'medium' => $class->medium_name,
                 'roll_number' => $student->roll_number,
                 'date_of_birth' => $student->date_of_birth,
                 'father_name' => $student->father_name,
@@ -410,8 +412,8 @@ class StudentResultController extends Controller
                 'is_shifted'         => $nextYearShifted ? true : false,
                 'shifted_record_id'  => $nextYearShifted?->id,
                 'shifted_to_year'    => $nextYearShifted?->academic_year,
-                'shifted_to_class'   => $nextYearShifted?->class,
-                'shifted_to_section' => $nextYearShifted?->section,
+                'shifted_to_class'   => $nextYearShifted?->schoolClass?->class_name,
+                'shifted_to_section' => $nextYearShifted?->schoolClass?->section,
             ];
         });
 
@@ -431,7 +433,12 @@ class StudentResultController extends Controller
             'classInfo' => [
                 'id' => $class->id,
                 'class_name' => $class->class_name,
+                'class_label' => $class->class_label,
+                'section_label' => $class->section_label,
                 'section' => $class->section,
+                'group' => $class->group_name,
+                'shift' => $class->shift_name,
+                'medium' => $class->medium_name,
                 'academic_year' => $class->academic_year,
                 'class_teacher' => $class->class_teacher,
             ],
@@ -475,16 +482,29 @@ class StudentResultController extends Controller
         set_time_limit(0);
         ignore_user_abort(true);
 
+        // Make sure the target year has its class rows BEFORE resolving the target.
+        SchoolClass::ensureForYear((int) $validated['to_year']);
+
+        // Students stay in their own shift and medium when they move up; when the same class and
+        // section exists in several of them, that is what tells them apart.
+        $sources  = SchoolClass::whereIn('id', \App\Models\Student::whereIn('id', $validated['student_ids'])->pluck('class_id')->unique())->get();
+        $shiftId  = $sources->pluck('shift_id')->unique()->count() === 1 ? $sources->first()->shift_id : null;
+        $mediumId = $sources->pluck('medium_id')->unique()->count() === 1 ? $sources->first()->medium_id : null;
+
+        $targetClass = SchoolClass::resolveActive($validated['target_class'], $validated['target_section'] ?? null, (int) $validated['to_year'], null, $shiftId, $mediumId)
+            ?? SchoolClass::resolveActive($validated['target_class'], $validated['target_section'] ?? null, (int) $validated['to_year']);
+
+        if (! $targetClass) {
+            return back()->with('error', 'Target class/section does not exist for ' . $validated['to_year'] . '.');
+        }
+
         (new ShiftStudentsToNextYear(
             $validated['student_ids'],
-            $validated['target_class'],
-            $validated['target_section'] ?? '',
+            $targetClass->id,
             (int) $validated['from_year'],
             (int) $validated['to_year'],
             auth()->id(),
         ))->handle();
-
-        $this->ensureClassesForYear((int) $validated['to_year']);
 
         $result = Cache::get('shift_result_' . auth()->id(), []);
 
@@ -496,6 +516,14 @@ class StudentResultController extends Controller
             ' for ' . $validated['to_year'] .
             (!empty($result['skipped']) ? ' (' . $result['skipped'] . ' already existed).' : '.')
         );
+    }
+
+    /**
+     * ⭐ Result of the last shift run for the current user (polled by the UI).
+     */
+    public function shiftStatus()
+    {
+        return response()->json(Cache::get('shift_result_' . auth()->id(), ['done' => true]));
     }
 
     /**
@@ -513,44 +541,6 @@ class StudentResultController extends Controller
         return back()->with('success', '✅ Shift record deleted. Student can be shifted again.');
     }
 
-    /**
-     * ⭐ Ensure that the given year has class records in `classes`.
-     */
-    private function ensureClassesForYear(int $year): void
-    {
-        $exists = SchoolClass::where('academic_year', $year)->exists();
-        if ($exists) {
-            return;
-        }
-
-        $sourceYear = SchoolClass::where('academic_year', '!=', $year)
-            ->orderByDesc('academic_year')
-            ->value('academic_year');
-
-        if (! $sourceYear) {
-            return;
-        }
-
-        $sourceClasses = SchoolClass::where('academic_year', $sourceYear)
-            ->orderBy('class_name')
-            ->orderBy('section')
-            ->get();
-
-        foreach ($sourceClasses as $src) {
-            SchoolClass::firstOrCreate(
-                [
-                    'class_name'    => $src->class_name,
-                    'section'       => $src->section,
-                    'academic_year' => $year,
-                ],
-                [
-                    'class_teacher' => $src->class_teacher,
-                    'subjects'      => $src->subjects ?? [],
-                    'status'        => $src->status ?? 'active',
-                ]
-            );
-        }
-    }
 
     /**
      * 🆕 Build Class / Section dropdown options for the class-list filter.
@@ -559,14 +549,14 @@ class StudentResultController extends Controller
      *
      * @return array [classNames[], sections[], hasNoSection(bool)]
      */
-    private function buildClassFilterOptions($year, string $className = '', ?string $teacherName = null): array
+    private function buildClassFilterOptions($year, string $className = '', ?array $classIds = null): array
     {
         $base = SchoolClass::query()
             ->where('status', 'active')
             ->where('academic_year', $year);
 
-        if ($teacherName !== null) {
-            $base->where('class_teacher', $teacherName);
+        if ($classIds !== null) {
+            $base->whereIn('id', $classIds);
         }
 
         $classNames = (clone $base)
@@ -635,13 +625,13 @@ class StudentResultController extends Controller
      */
     private function getClassNames(): array
     {
-        return Student::query()
-            ->select('class')
-            ->whereNotNull('class')
-            ->where('class', '!=', '')
+        return SchoolClass::query()
+            ->where('status', 'active')
+            ->whereNotNull('class_name')
+            ->where('class_name', '!=', '')
             ->distinct()
-            ->orderBy('class')
-            ->pluck('class')
+            ->orderBy('class_name')
+            ->pluck('class_name')
             ->values()
             ->toArray();
     }

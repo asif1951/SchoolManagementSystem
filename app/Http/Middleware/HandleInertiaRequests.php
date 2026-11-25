@@ -33,8 +33,14 @@ class HandleInertiaRequests extends Middleware
 
         return array_merge(parent::share($request), [
             'auth' => [
-                'user' => $request->user(),
+                'user'      => $request->user(),
+                // What this user's role allows (e.g. "fees.collect", "attendance.take:own", or "*").
+                // Used only to show/hide menus and buttons — the server enforces every rule again.
+                'abilities' => $request->user()?->grantedAbilities() ?? [],
             ],
+            // the student module's labels (English or Bangla, per the user's choice); sent only on its own pages
+            'locale' => app()->getLocale(),
+            'i18n'   => fn () => ($request->is('student-module*') || $request->is('apply')) ? ['student' => trans('student')] : null,
             'flash' => [
                 'success' => session('success'),
                 'error'   => session('error'),

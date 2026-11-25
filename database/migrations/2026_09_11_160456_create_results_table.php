@@ -12,9 +12,9 @@ return new class extends Migration
             $table->id();
             $table->foreignId('student_id')->constrained('students')->onDelete('cascade');
             $table->unsignedBigInteger('class_id');
-            $table->string('subject');
-            $table->string('exam_type')->default('final');
-            $table->string('academic_year');
+            $table->string('subject', 100);
+            $table->string('exam_type', 50)->default('final');
+            $table->string('academic_year', 10);
             $table->decimal('marks', 5, 2);
             $table->string('grade', 5);
             $table->decimal('gpa', 3, 2);

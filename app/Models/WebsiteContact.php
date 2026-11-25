@@ -21,6 +21,7 @@ class WebsiteContact extends Model
 
     public static function current(): self
     {
-        return static::firstOrCreate(['id' => 1]);
+        // "the first row", not "id 1": `id` is not mass-assignable, so an id lookup would make a new row on every call once the counter passes 1
+        return static::query()->orderBy('id')->first() ?? static::create([])->fresh();
     }
 }

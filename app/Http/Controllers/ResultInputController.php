@@ -7,6 +7,7 @@ use App\Models\SchoolClass;
 use App\Models\Student;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 class ResultInputController extends Controller 
@@ -55,13 +56,23 @@ class ResultInputController extends Controller
             ->orderBy('class_name')
             ->orderBy('section');
 
-        if (! $isAdmin) {
-            $query->where('class_teacher', $user->name);
-        }
+        $query->visibleTo($user, 'results.view');
 
         // ✅ Class filter
         if ($classNameFilter !== '') {
             $query->where('class_name', $classNameFilter);
+        }
+
+        if ($request->filled('group')) {
+            $query->where('study_group_id', (int) $request->input('group'));
+        }
+
+        if ($request->filled('shift')) {
+            $query->where('shift_id', (int) $request->input('shift'));
+        }
+
+        if ($request->filled('medium')) {
+            $query->where('medium_id', (int) $request->input('medium'));
         }
 
         // ✅ Section filter
@@ -75,30 +86,28 @@ class ResultInputController extends Controller
             $query->where(function ($q) use ($search) {
                 $q->where('class_name', 'LIKE', "%{$search}%")
                   ->orWhere('section', 'LIKE', "%{$search}%")
-                  ->orWhere('class_teacher', 'LIKE', "%{$search}%");
+                  ->orWhereHas('currentTeacher', fn ($t) => $t->where('name', 'LIKE', "%{$search}%"));
             });
         }
 
         // ✅ Pagination — 12 per page
         $paginatedClasses = $query->paginate(12)->withQueryString();
 
-        $classesData = collect($paginatedClasses->items())->map(function ($class) {
-            $studentCount = Student::where('class', $class->class_name)
-                ->where('section', $class->section)
-                ->where('academic_year', $class->academic_year)
-                ->where('status', 'active')
-                ->count();
+        [$classCounts, $classLocked] = $this->classStats($paginatedClasses->items());
 
-            $isLocked = ResultInput::where('class_id', $class->id)
-                ->where('exam_type', 'final')
-                ->where('academic_year', $class->academic_year)
-                ->where('is_locked', true)
-                ->exists();
+        $classesData = collect($paginatedClasses->items())->map(function ($class) use ($classCounts, $classLocked) {
+            $studentCount = (int) ($classCounts[$class->id] ?? 0);
+            $isLocked = $classLocked->has($class->id);
 
             return [
                 'id' => $class->id,
                 'class_name' => $class->class_name,
+                'class_label' => $class->class_label,
+                'section_label' => $class->section_label,
                 'section' => $class->section,
+                'group' => $class->group_name,
+                'shift' => $class->shift_name,
+                'medium' => $class->medium_name,
                 'academic_year' => (string) $class->academic_year,
                 'class_teacher' => $class->class_teacher,
                 'subjects' => $class->subjects ?? [],
@@ -144,7 +153,13 @@ class ResultInputController extends Controller
             'classNames' => $classNames,
             'sections' => $sections,
             'selectedYear' => $selectedYear,
+            'groups' => \App\Models\StudyGroup::active()->ordered()->get(['id', 'name']),
+            'shifts' => \App\Models\Shift::active()->ordered()->get(['id', 'name']),
+            'mediums' => \App\Models\Medium::active()->ordered()->get(['id', 'name']),
             'filters' => [
+                'group' => (string) $request->input('group', ''),
+                'shift' => (string) $request->input('shift', ''),
+                'medium' => (string) $request->input('medium', ''),
                 'academic_year' => $selectedYear,
                 'exam_type' => 'final',
                 'search' => $request->input('search', ''),
@@ -165,9 +180,15 @@ class ResultInputController extends Controller
         $user = Auth::user();
         $isAdmin = $user->role === 'admin';
 
-        if (! $isAdmin && $class->class_teacher !== $user->name) {
+        if (! $user->canDo('results.view', $class)) {
             abort(403, 'You are not authorized for this class.');
         }
+
+        // null = whole class (admin / class teacher); array = a subject teacher's own subjects only.
+        $viewSubjects = $user->subjectsAllowedFor($class, 'results.view');
+        $restricted   = $viewSubjects !== null;
+        $enterSubjects = $user->subjectsAllowedFor($class, 'results.enter');
+        $canUnlock    = $user->hasAbility('results.unlock');
 
         $examType = $request->input('exam_type', 'final');
         $search = $request->input('search', '');
@@ -182,29 +203,25 @@ class ResultInputController extends Controller
             ->orderBy('class_name')
             ->orderBy('section');
 
-        if (! $isAdmin) {
-            $classQuery->where('class_teacher', $user->name);
-        }
+        $classQuery->visibleTo($user, 'results.view');
 
         $paginatedSidebarClasses = $classQuery->paginate(12)->withQueryString();
 
-        $sidebarClasses = collect($paginatedSidebarClasses->items())->map(function ($c) {
-            $studentCount = Student::where('class', $c->class_name)
-                ->where('section', $c->section)
-                ->where('academic_year', $c->academic_year)
-                ->where('status', 'active')
-                ->count();
+        [$classCounts, $classLocked] = $this->classStats($paginatedSidebarClasses->items());
 
-            $isLocked = ResultInput::where('class_id', $c->id)
-                ->where('exam_type', 'final')
-                ->where('academic_year', $c->academic_year)
-                ->where('is_locked', true)
-                ->exists();
+        $sidebarClasses = collect($paginatedSidebarClasses->items())->map(function ($c) use ($classCounts, $classLocked) {
+            $studentCount = (int) ($classCounts[$c->id] ?? 0);
+            $isLocked = $classLocked->has($c->id);
 
             return [
                 'id' => $c->id,
                 'class_name' => $c->class_name,
+                'class_label' => $c->class_label,
+                'section_label' => $c->section_label,
                 'section' => $c->section,
+                'group' => $c->group_name,
+                'shift' => $c->shift_name,
+                'medium' => $c->medium_name,
                 'academic_year' => (string) $c->academic_year,
                 'class_teacher' => $c->class_teacher,
                 'subjects' => $c->subjects ?? [],
@@ -226,17 +243,13 @@ class ResultInputController extends Controller
 
         // Unfiltered total
         $totalStudents = Student::query()
-            ->where('class', $class->class_name)
-            ->where('section', $class->section)
-            ->where('academic_year', $class->academic_year)
+            ->where('class_id', $class->id)
             ->where('status', 'active')
             ->count();
 
         // ✅ Students query with backend filtering
         $studentsQuery = Student::query()
-            ->where('class', $class->class_name)
-            ->where('section', $class->section)
-            ->where('academic_year', $class->academic_year)
+            ->where('class_id', $class->id)
             ->where('status', 'active');
 
         if (! empty($search)) {
@@ -260,10 +273,16 @@ class ResultInputController extends Controller
         $pageStudents = collect($paginatedStudents->items());
         $classStudentIds = $pageStudents->pluck('id')->toArray();
 
+        $subjects = $class->subjects ?? [];
+        if ($restricted) {
+            $subjects = array_values(array_intersect($subjects, $viewSubjects));
+        }
+
         // Existing results (for page students only)
         $existingResults = collect();
         if (! empty($classStudentIds)) {
             $existingResults = ResultInput::where('class_id', $class->id)
+                ->whereIn('subject', $subjects)
                 ->where('exam_type', $examType)
                 ->where('academic_year', $class->academic_year)
                 ->whereIn('student_id', $classStudentIds)
@@ -271,28 +290,34 @@ class ResultInputController extends Controller
                 ->groupBy('student_id');
         }
 
-        $subjects = $class->subjects ?? [];
         $subjectLocks = [];
 
+        $lockRows = ResultInput::with('lockedBy:id,name')
+            ->where('class_id', $class->id)
+            ->where('exam_type', $examType)
+            ->where('academic_year', $class->academic_year)
+            ->where('is_locked', true)
+            ->get()
+            ->keyBy('subject');
+
         foreach ($subjects as $subject) {
-            $lockRow = ResultInput::where('class_id', $class->id)
-                ->where('exam_type', $examType)
-                ->where('academic_year', $class->academic_year)
-                ->where('subject', $subject)
-                ->where('is_locked', true)
-                ->first();
+            $lockRow = $lockRows->get($subject);
 
             $subjectLocks[$subject] = [
                 'is_locked' => (bool) $lockRow,
                 'locked_at' => $lockRow?->locked_at?->format('d M Y, h:i A'),
                 'locked_by' => $lockRow?->lockedBy?->name,
+                // may THIS user type marks for the subject right now?
+                'can_enter' => ($enterSubjects === null || in_array($subject, $enterSubjects, true))
+                    && (! $lockRow || $canUnlock),
             ];
         }
 
-        // Subject-wise highest marks (for page students only)
+        // Subject-wise highest marks (whole class)
         $subjectHighest = [];
         if (! empty($classStudentIds)) {
-            $subjectHighest = ResultInput::whereIn('student_id', $classStudentIds)
+            $subjectHighest = ResultInput::where('class_id', $class->id)
+                ->whereIn('subject', $subjects)
                 ->where('exam_type', $examType)
                 ->where('academic_year', $class->academic_year)
                 ->selectRaw('subject, MAX(marks) as highest')
@@ -304,10 +329,10 @@ class ResultInputController extends Controller
         // Total marks per student
         $totalsFromDb = [];
         if (! empty($classStudentIds)) {
-            $totalsFromDb = ResultInput::whereIn('student_id', $classStudentIds)
+            $totalsFromDb = ResultInput::where('class_id', $class->id)
                 ->where('exam_type', $examType)
                 ->where('academic_year', $class->academic_year)
-                ->selectRaw('student_id, MAX(total_marks) as total')
+                ->selectRaw('student_id, SUM(marks) as total')
                 ->groupBy('student_id')
                 ->pluck('total', 'student_id')
                 ->toArray();
@@ -316,7 +341,7 @@ class ResultInputController extends Controller
         // Fail count per student
         $failCounts = [];
         if (! empty($classStudentIds)) {
-            $failCounts = ResultInput::whereIn('student_id', $classStudentIds)
+            $failCounts = ResultInput::where('class_id', $class->id)
                 ->where('exam_type', $examType)
                 ->where('academic_year', $class->academic_year)
                 ->where('grade', 'F')
@@ -326,7 +351,7 @@ class ResultInputController extends Controller
                 ->toArray();
         }
 
-        // ✅ Ranking (page students only)
+        // ✅ Ranking (whole class, so the rank is the same on every page)
         $rankable = [];
         foreach ($totalsFromDb as $sid => $total) {
             $rankable[] = [
@@ -359,7 +384,13 @@ class ResultInputController extends Controller
             $position++;
         }
 
-        $studentsData = $pageStudents->map(function ($student) use ($existingResults, $totalsFromDb, $ranks, $failCounts) {
+        if ($restricted) {
+            $totalsFromDb = [];
+            $ranks        = [];
+            $failCounts   = [];
+        }
+
+        $studentsData = $pageStudents->map(function ($student) use ($existingResults, $totalsFromDb, $ranks, $failCounts, $class, $restricted) {
             $studentResults = $existingResults->get($student->id, collect());
 
             $marks = [];
@@ -383,14 +414,41 @@ class ResultInputController extends Controller
             $overallGpa = $gpaCount > 0 ? round($gpaSum / $gpaCount, 2) : 0.00;
             $overallLetter = $this->gpaToLetter($overallGpa, $hasFail);
 
+            if ($restricted) {
+                // A subject teacher only needs to identify the student and enter their own subject.
+                return [
+                    'id' => $student->id,
+                    'student_id' => $student->student_id,
+                    'student_name' => $student->student_name,
+                    'student_photo' => $student->student_photo,
+                    'roll_number' => $student->roll_number,
+                    'class' => $class->class_name,
+                    'section' => $class->section,
+                    'group' => $class->group_name,
+                    'shift' => $class->shift_name,
+                    'medium' => $class->medium_name,
+                    'academic_year' => (string) $student->academic_year,
+                    'marks' => $marks,
+                    'subjects' => $subjectData,
+                    'total_marks' => null,
+                    'rank' => null,
+                    'has_fail' => false,
+                    'overall_gpa' => '-',
+                    'overall_letter' => '-',
+                ];
+            }
+
             return [
                 'id' => $student->id,
                 'student_id' => $student->student_id,
                 'student_name' => $student->student_name,
                 'student_photo' => $student->student_photo,
                 'roll_number' => $student->roll_number,
-                'class' => $student->class,
-                'section' => $student->section,
+                'class' => $class->class_name,
+                'section' => $class->section,
+                'group' => $class->group_name,
+                'shift' => $class->shift_name,
+                'medium' => $class->medium_name,
                 'date_of_birth' => $student->date_of_birth,
                 'gender' => $student->gender,
                 'blood_group' => $student->blood_group,
@@ -435,7 +493,12 @@ class ResultInputController extends Controller
             'classInfo' => [
                 'id' => $class->id,
                 'class_name' => $class->class_name,
+                'class_label' => $class->class_label,
+                'section_label' => $class->section_label,
                 'section' => $class->section,
+                'group' => $class->group_name,
+                'shift' => $class->shift_name,
+                'medium' => $class->medium_name,
                 'academic_year' => (string) $class->academic_year,
                 'class_teacher' => $class->class_teacher,
             ],
@@ -447,6 +510,7 @@ class ResultInputController extends Controller
             'examType' => $examType,
             'examTypes' => $this->getExamTypes(),
             'isAdmin' => $isAdmin,
+            'restricted' => $restricted,
             'schoolInfo' => $this->getSchoolInfo(),
             'flash' => session()->only(['success', 'error']),
             'availableYears' => $availableYears,
@@ -465,91 +529,136 @@ class ResultInputController extends Controller
     }
 
     /**
-     * Save results
+     * Save results.
+     *
+     * Who may type which subject:
+     *   - subject teacher  → only the subjects they teach in this class
+     *   - class teacher    → any subject of their class that is not locked
+     *                        (so they can enter marks on a subject teacher's behalf)
+     *   - admin            → anything, locked subjects included
+     * A locked subject can only be changed by someone who may unlock it.
      */
     public function store(Request $request, $classId)
     {
         $class = SchoolClass::findOrFail($classId);
-        $user = Auth::user();
-        $isAdmin = $user->role === 'admin';
+        $user  = Auth::user();
 
-        if (! $isAdmin && $class->class_teacher !== $user->name) {
+        if (! $user->canDo('results.enter', $class)) {
             abort(403);
         }
 
         $validated = $request->validate([
-            'exam_type' => 'required|string',
-            'results' => 'required|array',
-            'results.*.student_id' => 'required|integer|exists:students,id',
-            'results.*.subject' => 'required|string',
+            'exam_type' => 'required|string|max:50',
+            'results' => 'required|array|max:5000',
+            'results.*.student_id' => 'required|integer',
+            'results.*.subject' => 'required|string|max:100',
             'results.*.marks' => 'required|numeric|min:0|max:100',
         ]);
 
-        $savedCount = 0;
-        $skippedSubjects = [];
+        $examType      = $validated['exam_type'];
+        $records       = collect($validated['results']);
+        $classSubjects = $class->subjects ?? [];
 
-        $marksByStudent = [];
-        foreach ($validated['results'] as $record) {
-            $marksByStudent[$record['student_id']][$record['subject']] = $record['marks'];
+        // Every student must belong to THIS class, every subject must be one of its subjects.
+        $studentIds = $records->pluck('student_id')->unique()->values();
+        $inClass    = Student::query()->where('class_id', $class->id)->whereIn('id', $studentIds)->pluck('id')->flip();
+
+        if ($inClass->count() !== $studentIds->count()) {
+            return back()->with('error', 'Some students do not belong to this class. Nothing was saved.');
         }
 
-        $totalsByStudent = [];
-        foreach ($marksByStudent as $studentId => $subjects) {
-            $totalsByStudent[$studentId] = array_sum($subjects);
+        if ($records->pluck('subject')->unique()->diff($classSubjects)->isNotEmpty()) {
+            return back()->with('error', 'Some subjects do not belong to this class. Nothing was saved.');
         }
 
-        foreach ($validated['results'] as $record) {
-            $isLocked = ResultInput::where('class_id', $class->id)
-                ->where('exam_type', $validated['exam_type'])
-                ->where('academic_year', $class->academic_year)
-                ->where('subject', $record['subject'])
-                ->where('is_locked', true)
-                ->exists();
+        $allowed    = $user->subjectsAllowedFor($class, 'results.enter');   // null = every subject
+        $canUnlock  = $user->hasAbility('results.unlock');
+        $lockedNow  = ResultInput::query()
+            ->where('class_id', $class->id)
+            ->where('exam_type', $examType)
+            ->where('academic_year', $class->academic_year)
+            ->where('is_locked', true)
+            ->distinct()
+            ->pluck('subject')
+            ->flip();
 
-            if ($isLocked && ! $isAdmin) {
-                if (! in_array($record['subject'], $skippedSubjects)) {
-                    $skippedSubjects[] = $record['subject'];
-                }
+        $notYours = [];
+        $locked   = [];
+        $rows     = [];
+        $now      = now();
+
+        foreach ($records as $record) {
+            $subject = $record['subject'];
+
+            if ($allowed !== null && ! in_array($subject, $allowed, true)) {
+                $notYours[$subject] = true;
                 continue;
             }
 
-            $gradeInfo = $this->calculateGrade($record['marks']);
-
-            ResultInput::updateOrCreate(
-                [
-                    'student_id' => $record['student_id'],
-                    'class_id' => $class->id,
-                    'subject' => $record['subject'],
-                    'exam_type' => $validated['exam_type'],
-                    'academic_year' => $class->academic_year,
-                ],
-                [
-                    'marks' => $record['marks'],
-                    'total_marks' => $totalsByStudent[$record['student_id']] ?? 0,
-                    'grade' => $gradeInfo['letter'],
-                    'gpa' => $gradeInfo['gpa'],
-                    'entered_by' => $user->id,
-                ]
-            );
-
-            $savedCount++;
-        }
-
-        if (! empty($skippedSubjects)) {
-            $subjectList = implode(', ', $skippedSubjects);
-
-            if ($savedCount > 0) {
-                return redirect()
-                    ->route('results.show', [$class->id, 'exam_type' => $validated['exam_type']])
-                    ->with('success', "{$savedCount} marks saved. 🔒 Locked: {$subjectList}");
+            if ($lockedNow->has($subject) && ! $canUnlock) {
+                $locked[$subject] = true;
+                continue;
             }
 
-            return back()->with('error', "🔒 Locked subjects: {$subjectList}. Only admin can modify them.");
+            $grade = $this->calculateGrade($record['marks']);
+
+            $rows[] = [
+                'student_id'    => (int) $record['student_id'],
+                'class_id'      => $class->id,
+                'subject'       => $subject,
+                'exam_type'     => $examType,
+                'academic_year' => (string) $class->academic_year,
+                'marks'         => $record['marks'],
+                'total_marks'   => 0,                     // recomputed below from ALL subjects
+                'grade'         => $grade['letter'],
+                'gpa'           => $grade['gpa'],
+                'entered_by'    => $user->id,
+                'created_at'    => $now,
+                'updated_at'    => $now,
+            ];
         }
 
+        DB::transaction(function () use ($rows, $class, $examType) {
+            foreach (array_chunk($rows, 500) as $chunk) {
+                ResultInput::upsert(
+                    $chunk,
+                    ['student_id', 'class_id', 'subject', 'exam_type', 'academic_year'],
+                    ['marks', 'grade', 'gpa', 'entered_by', 'updated_at']
+                );
+            }
+
+            // A student's total is the sum of ALL their subjects — not just the ones saved in this request
+            // (several teachers enter different subjects at different times).
+            DB::update(
+                'UPDATE results r
+                 JOIN (SELECT student_id, SUM(marks) AS t FROM results
+                        WHERE class_id = ? AND exam_type = ? AND academic_year = ?
+                        GROUP BY student_id) x ON x.student_id = r.student_id
+                    SET r.total_marks = x.t
+                  WHERE r.class_id = ? AND r.exam_type = ? AND r.academic_year = ?',
+                [$class->id, $examType, $class->academic_year, $class->id, $examType, $class->academic_year]
+            );
+        });
+
+        $saved = count($rows);
+        $notes = [];
+
+        if ($locked) {
+            $notes[] = '🔒 Locked: ' . implode(', ', array_keys($locked)) . ' (only an admin can change them)';
+        }
+        if ($notYours) {
+            $notes[] = '⛔ Not your subject: ' . implode(', ', array_keys($notYours));
+        }
+
+        if ($saved === 0 && $notes) {
+            return back()->with('error', implode(' — ', $notes));
+        }
+
+        $message = "{$saved} marks saved" . ($notes ? '. ' . implode(' ', $notes) : ' successfully!');
+
         return redirect()
-            ->route('results.show', [$class->id, 'exam_type' => $validated['exam_type']])
-            ->with('success', "{$savedCount} marks saved successfully!");
+            ->route('results.show', [$class->id, 'exam_type' => $examType])
+            ->with('success', $message);
     }
 
     /**
@@ -561,7 +670,7 @@ class ResultInputController extends Controller
         $user = Auth::user();
         $isAdmin = $user->role === 'admin';
 
-        if (! $isAdmin && $class->class_teacher !== $user->name) {
+        if (! $user->canDo('results.lock', $class)) {
             abort(403);
         }
 
@@ -569,6 +678,13 @@ class ResultInputController extends Controller
             'exam_type' => 'required|string',
             'subject' => 'required|string',
         ]);
+
+        $lockable = $user->subjectsAllowedFor($class, 'results.lock');   // null = any subject of the class
+
+        if (! in_array($validated['subject'], $class->subjects ?? [], true)
+            || ($lockable !== null && ! in_array($validated['subject'], $lockable, true))) {
+            abort(403, 'You may not lock this subject.');
+        }
 
         $hasResults = ResultInput::where('class_id', $class->id)
             ->where('exam_type', $validated['exam_type'])
@@ -601,10 +717,6 @@ class ResultInputController extends Controller
     public function unlock(Request $request, $classId)
     {
         $user = Auth::user();
-
-        if ($user->role !== 'admin') {
-            return back()->with('error', '❌ Only admin can unlock results.');
-        }
 
         $class = SchoolClass::findOrFail($classId);
 
@@ -640,9 +752,7 @@ class ResultInputController extends Controller
                 ->where('status', 'active')
                 ->where('academic_year', $year);
 
-            if (! $isAdmin) {
-                $q->where('class_teacher', $user->name);
-            }
+            $q->visibleTo($user, 'results.view');
 
             return $q;
         };
@@ -681,6 +791,34 @@ class ResultInputController extends Controller
         if ($marks >= 40) return ['letter' => 'C',  'gpa' => 2.00];
         if ($marks >= 33) return ['letter' => 'D',  'gpa' => 1.00];
         return ['letter' => 'F', 'gpa' => 0.00];
+    }
+
+    /**
+     * One grouped query each for student counts and locked state, instead of
+     * two queries per class in the list.
+     *
+     * @return array{0: \Illuminate\Support\Collection, 1: \Illuminate\Support\Collection}
+     */
+    private function classStats(iterable $classes): array
+    {
+        $ids = collect($classes)->pluck('id');
+
+        $counts = Student::query()
+            ->whereIn('class_id', $ids)
+            ->where('status', 'active')
+            ->selectRaw('class_id, COUNT(*) AS total')
+            ->groupBy('class_id')
+            ->pluck('total', 'class_id');
+
+        $locked = ResultInput::query()
+            ->whereIn('class_id', $ids)
+            ->where('exam_type', 'final')
+            ->where('is_locked', true)
+            ->distinct()
+            ->pluck('class_id')
+            ->flip();
+
+        return [$counts, $locked];
     }
 
     private function gpaToLetter(float $gpa, bool $hasFail = false): string

@@ -7,6 +7,7 @@ use App\Models\SchoolClass;
 use App\Models\Student;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 class AttendanceController extends Controller
@@ -21,13 +22,13 @@ class AttendanceController extends Controller
     {
         $user = Auth::user();
         $isAdmin = $user->role === 'admin';
-        $teacherName = $user->name;
+        $teacherId = $user->id;
 
         // ✅ Selected academic year (default: current year)
         $selectedYear = (string) $request->input('academic_year', now()->year);
 
         // ⭐ Ensure classes exist for this year (auto-copy from most recent year)
-        $this->ensureClassesForYear((int) $selectedYear);
+        SchoolClass::ensureForYear((int) $selectedYear);
 
         // ✅ Available years from classes table
         $availableYears = SchoolClass::query()
@@ -52,9 +53,7 @@ class AttendanceController extends Controller
             ->where('status', 'active')
             ->where('academic_year', $selectedYear);
 
-        if (! $isAdmin) {
-            $optionsBase->where('class_teacher', $teacherName);
-        }
+        $optionsBase->visibleTo($user, 'attendance.view');
 
         $availableClassNames = (clone $optionsBase)
             ->select('class_name')
@@ -94,9 +93,7 @@ class AttendanceController extends Controller
             ->orderBy('class_name')
             ->orderBy('section');
 
-        if (! $isAdmin) {
-            $query->where('class_teacher', $teacherName);
-        }
+        $query->visibleTo($user, 'attendance.view');
 
         // 🆕 Class filter (backend)
         if ($selectedClassName !== '') {
@@ -120,7 +117,7 @@ class AttendanceController extends Controller
             $query->where(function ($q) use ($search) {
                 $q->where('class_name', 'LIKE', "%{$search}%")
                   ->orWhere('section', 'LIKE', "%{$search}%")
-                  ->orWhere('class_teacher', 'LIKE', "%{$search}%");
+                  ->orWhereHas('currentTeacher', fn ($t) => $t->where('name', 'LIKE', "%{$search}%"));
             });
         }
 
@@ -185,12 +182,12 @@ class AttendanceController extends Controller
         $class = SchoolClass::findOrFail($classId);
 
         // ⭐ Ensure classes exist for this class's year (safety)
-        $this->ensureClassesForYear((int) $class->academic_year);
+        SchoolClass::ensureForYear((int) $class->academic_year);
 
         $user = Auth::user();
         $isAdmin = $user->role === 'admin';
 
-        if (! $isAdmin && $class->class_teacher !== $user->name) {
+        if (! $user->canDo('attendance.view', $class)) {
             abort(403, 'You are not authorized for this class.');
         }
 
@@ -203,9 +200,7 @@ class AttendanceController extends Controller
             ->orderBy('class_name')
             ->orderBy('section');
 
-        if (! $isAdmin) {
-            $query->where('class_teacher', $user->name);
-        }
+        $query->visibleTo($user, 'attendance.view');
 
         $paginatedClasses = $query->paginate(12)->withQueryString();
 
@@ -228,17 +223,8 @@ class AttendanceController extends Controller
 
         // ✅ Students query with search filter — section-strict NULL-safe
         $studentsQuery = Student::query()
-            ->where('class', $class->class_name)
-            ->where('academic_year', $class->academic_year)
+            ->where('class_id', $class->id)
             ->where('status', 'active');
-
-        if ($class->section === null || $class->section === '') {
-            $studentsQuery->where(function ($q) {
-                $q->whereNull('section')->orWhere('section', '');
-            });
-        } else {
-            $studentsQuery->where('section', $class->section);
-        }
 
         if ($request->filled('search')) {
             $search = $request->search;
@@ -352,6 +338,8 @@ class AttendanceController extends Controller
             'classInfo' => [
                 'id' => $class->id,
                 'class_name' => $class->class_name,
+                'class_label' => $class->class_label,
+                'section_label' => $class->section_label,
                 'section' => $class->section,
                 'academic_year' => (string) $class->academic_year,
                 'class_teacher' => $class->class_teacher,
@@ -394,25 +382,45 @@ class AttendanceController extends Controller
         $user = Auth::user();
         $isAdmin = $user->role === 'admin';
 
-        if (! $isAdmin && $class->class_teacher !== $user->name) {
+        if (! $user->canDo('attendance.take', $class)) {
             return back()->with('error', 'Unauthorized action.');
         }
 
-        foreach ($validated['attendance'] as $record) {
-            Attendance::updateOrCreate(
-                [
-                    'student_id' => $record['student_id'],
-                    'attendance_date' => $validated['date'],
-                ],
-                [
-                    'class' => $class->class_name,
-                    'section' => $class->section,
-                    'status' => $record['status'],
-                    'academic_year' => $class->academic_year,
-                    'marked_by' => Auth::id(),
-                ]
-            );
+        // Security: every submitted student must actually belong to this class.
+        $submittedIds = collect($validated['attendance'])->pluck('student_id')->unique()->values();
+        $validCount = Student::query()
+            ->where('class_id', $class->id)
+            ->whereIn('id', $submittedIds)
+            ->count();
+
+        if ($validCount !== $submittedIds->count()) {
+            return back()->with('error', 'One or more students do not belong to this class.');
         }
+
+        // One bulk upsert instead of one query per student.
+        $now  = now();
+        $rows = collect($validated['attendance'])
+            ->unique('student_id')
+            ->map(fn ($r) => [
+                'student_id'      => $r['student_id'],
+                'attendance_date' => $validated['date'],
+                'class_id'        => $class->id,
+                'status'          => $r['status'],
+                'academic_year'   => $class->academic_year,
+                'marked_by'       => Auth::id(),
+                'created_at'      => $now,
+                'updated_at'      => $now,
+            ])
+            ->values()
+            ->all();
+
+        DB::transaction(function () use ($rows) {
+            Attendance::upsert(
+                $rows,
+                ['student_id', 'attendance_date'],
+                ['class_id', 'status', 'academic_year', 'marked_by', 'updated_at']
+            );
+        });
 
         return redirect()
             ->route('attendance.show', $class->id)
@@ -453,7 +461,7 @@ class AttendanceController extends Controller
         $user = Auth::user();
         $isAdmin = $user->role === 'admin';
 
-        if (! $isAdmin && $class->class_teacher !== $user->name) {
+        if (! $user->canDo('attendance.view', $class)) {
             return response()->json(['message' => 'You are not authorized for this class.'], 403);
         }
 
@@ -472,17 +480,8 @@ class AttendanceController extends Controller
 
         // ✅ Same student scope as show() — section-strict NULL-safe
         $studentsQuery = Student::query()
-            ->where('class', $class->class_name)
-            ->where('academic_year', $class->academic_year)
+            ->where('class_id', $class->id)
             ->where('status', 'active');
-
-        if ($class->section === null || $class->section === '') {
-            $studentsQuery->where(function ($q) {
-                $q->whereNull('section')->orWhere('section', '');
-            });
-        } else {
-            $studentsQuery->where('section', $class->section);
-        }
 
         $students = $studentsQuery
             ->orderBy('roll_number')
@@ -644,39 +643,31 @@ class AttendanceController extends Controller
     private function formatClassData($class, $isAdmin = false)
     {
         $studentQuery = Student::query()
-            ->where('class', $class->class_name)
-            ->where('academic_year', $class->academic_year)
+            ->where('class_id', $class->id)
             ->where('status', 'active');
 
-        if ($class->section === null || $class->section === '') {
-            $studentQuery->where(function ($q) {
-                $q->whereNull('section')->orWhere('section', '');
-            });
-        } else {
-            $studentQuery->where('section', $class->section);
-        }
+        $studentCount = (clone $studentQuery)->count();
 
-        $students = $studentQuery->get();
-        $studentIds = $students->pluck('id')->toArray();
-        $studentCount = count($studentIds);
-
-        $todayAttendance = Attendance::query()
-            ->whereIn('student_id', $studentIds)
+        $today = Attendance::query()
+            ->where('class_id', $class->id)
             ->whereDate('attendance_date', today())
-            ->get();
+            ->selectRaw("COUNT(*) AS taken, SUM(status IN ('present','late')) AS present")
+            ->first();
 
-        $todayPresent = $todayAttendance->whereIn('status', ['present', 'late'])->count();
+        $todayTaken   = (int) ($today->taken ?? 0);
+        $todayPresent = (int) ($today->present ?? 0);
         $todayPercentage = $studentCount > 0
             ? round(($todayPresent / $studentCount) * 100, 1)
             : 0;
 
-        $totalRecords = Attendance::whereIn('student_id', $studentIds)
+        $overall = Attendance::query()
+            ->where('class_id', $class->id)
             ->where('academic_year', $class->academic_year)
-            ->count();
-        $presentRecords = Attendance::whereIn('student_id', $studentIds)
-            ->where('academic_year', $class->academic_year)
-            ->whereIn('status', ['present', 'late'])
-            ->count();
+            ->selectRaw("COUNT(*) AS total, SUM(status IN ('present','late')) AS present")
+            ->first();
+
+        $totalRecords   = (int) ($overall->total ?? 0);
+        $presentRecords = (int) ($overall->present ?? 0);
         $overallPercentage = $totalRecords > 0
             ? round(($presentRecords / $totalRecords) * 100, 1)
             : 0;
@@ -684,54 +675,17 @@ class AttendanceController extends Controller
         return [
             'id' => $class->id,
             'class_name' => $class->class_name,
+            'class_label' => $class->class_label,
+            'section_label' => $class->section_label,
             'section' => $class->section,
             'academic_year' => (string) $class->academic_year,
             'class_teacher' => $class->class_teacher,
             'student_count' => $studentCount,
-            'today_attendance_taken' => $todayAttendance->count() > 0,
+            'today_attendance_taken' => $todayTaken > 0,
             'today_percentage' => $todayPercentage,
             'overall_percentage' => $overallPercentage,
             'isAdmin' => $isAdmin,
         ];
     }
 
-    /**
-     * ⭐ Ensure that the given year has class records in `classes`.
-     *    Same logic as StudentResultController.
-     */
-    private function ensureClassesForYear(int $year): void
-    {
-        $exists = SchoolClass::where('academic_year', $year)->exists();
-        if ($exists) {
-            return;
-        }
-
-        $sourceYear = SchoolClass::where('academic_year', '!=', $year)
-            ->orderByDesc('academic_year')
-            ->value('academic_year');
-
-        if (! $sourceYear) {
-            return;
-        }
-
-        $sourceClasses = SchoolClass::where('academic_year', $sourceYear)
-            ->orderBy('class_name')
-            ->orderBy('section')
-            ->get();
-
-        foreach ($sourceClasses as $src) {
-            SchoolClass::firstOrCreate(
-                [
-                    'class_name'    => $src->class_name,
-                    'section'       => $src->section,
-                    'academic_year' => $year,
-                ],
-                [
-                    'class_teacher' => $src->class_teacher,
-                    'subjects'      => $src->subjects ?? [],
-                    'status'        => $src->status ?? 'active',
-                ]
-            );
-        }
-    }
 }

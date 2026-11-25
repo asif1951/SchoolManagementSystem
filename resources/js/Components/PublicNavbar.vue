@@ -31,7 +31,7 @@ const user = computed(() => page.props.auth?.user)
 
 const isStaff = computed(() => {
     const role = user.value?.role
-    return role === 'admin' || role === 'teacher'
+    return !!role && role !== 'user'
 })
 
 // ============================================================

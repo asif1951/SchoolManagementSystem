@@ -30,13 +30,24 @@ class AuthenticatedSessionController extends Controller
     public function store(Request $request)
     {
         $request->validate([
-            'email'    => 'required|string|email',
+            'email'    => 'required|string',          // an email address or the 8-digit ID
             'password' => 'required|string',
         ]);
 
-        if (! Auth::attempt($request->only('email', 'password'), $request->boolean('remember'))) {
+        $credentials = ['email' => \App\Models\User::loginEmailFor($request->input('email')), 'password' => $request->input('password')];
+
+        if (! Auth::attempt($credentials, $request->boolean('remember'))) {
             throw ValidationException::withMessages([
                 'email' => __('auth.failed'),
+            ]);
+        }
+
+        // Only active accounts may sign in (suspended / inactive / pending are refused).
+        if (! Auth::user()->isActive()) {
+            Auth::guard('web')->logout();
+
+            throw ValidationException::withMessages([
+                'email' => 'Your account is not active. Please contact the school administration.',
             ]);
         }
 
@@ -45,18 +56,10 @@ class AuthenticatedSessionController extends Controller
         // ✅ Role অনুযায়ী redirect
         $user = Auth::user();
 
-        // Admin → Dashboard
-        if ($user && $user->isAdmin()) {
-            return redirect()->intended('/dashboard');
-        }
+        // Everyone lands on the first page their role can open.
+        $home = $user->homePath();
 
-        // Teacher → Students page
-        if ($user && $user->isTeacher()) {
-            return redirect()->intended('/students');
-        }
-
-        // Normal user → Home
-        return redirect('/');
+        return $home === '/' ? redirect('/') : redirect()->intended($home);
     }
 
     /**

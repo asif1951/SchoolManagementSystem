@@ -15,7 +15,7 @@ class SchoolClassController extends Controller
      */
     public function index()
     {
-        $classes = SchoolClass::latest()->paginate(10);
+        $classes = SchoolClass::visibleTo(request()->user(), 'classes.view')->latest()->paginate(10);
 
         // Get only active users whose role is teacher
         $teachers = User::query()
@@ -28,6 +28,10 @@ class SchoolClassController extends Controller
         return Inertia::render('classes', [
             'classes' => $classes,
             'teachers' => $teachers,
+            'subjectOptions' => \App\Models\Subject::active()->ordered()->get(['id', 'name']),
+            'studyGroups' => \App\Models\StudyGroup::active()->ordered()->get(['id', 'name']),
+            'shifts' => \App\Models\Shift::active()->ordered()->get(['id', 'name']),
+            'mediums' => \App\Models\Medium::active()->ordered()->get(['id', 'name']),
         ]);
     }
 
@@ -45,11 +49,16 @@ class SchoolClassController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
+            'studyGroup' => ['nullable', 'integer', 'exists:study_groups,id'],
+            'shiftId' => ['nullable', 'integer', 'exists:shifts,id'],
+            'mediumId' => ['nullable', 'integer', 'exists:mediums,id'],
             'className' => [
                 'required',
                 'string',
                 'max:255',
             ],
+            'classTitle' => ['nullable', 'string', 'max:100'],
+            'sectionTitle' => ['nullable', 'string', 'max:400'],
 
             'section' => [
                 'nullable',
@@ -75,13 +84,12 @@ class SchoolClassController extends Controller
             ],
 
             'subjects' => [
-                'required',
+                'nullable',
                 'array',
-                'min:1',
             ],
 
             'subjects.*' => [
-                'required',
+                'nullable',
                 'string',
                 'max:100',
             ],
@@ -100,20 +108,6 @@ class SchoolClassController extends Controller
             ],
         ]);
 
-        // Check if class with same name and section already exists
-        $exists = SchoolClass::where('class_name', $validated['className'])
-            ->where('section', $validated['section'] ?? null)
-            ->exists();
-
-        if ($exists) {
-            return redirect()
-                ->back()
-                ->withErrors([
-                    'className' => 'A class with this name and section already exists.',
-                ])
-                ->withInput();
-        }
-
         try {
             $teacher = User::query()
                 ->where('id', $validated['classTeacher'])
@@ -130,20 +124,29 @@ class SchoolClassController extends Controller
                     ->withInput();
             }
 
-            SchoolClass::create([
-                'class_name' => $validated['className'],
-                'section' => $validated['section'] ?? null,
-                'academic_year' => $validated['academicYear'],
-                'class_teacher' => $teacher->name,
-                'status' => $validated['status'],
-                'subjects' => $validated['subjects'],
-                'max_students' => $validated['maxStudents'] ?? null,
-                'description' => $validated['description'] ?? null,
-            ]);
+            // "A, B, C" creates one class per section; existing ones are skipped.
+            $result = SchoolClass::createForSections([
+                'class_name'     => $validated['className'],
+                'class_title'    => filled($validated['classTitle'] ?? null) ? trim($validated['classTitle']) : null,
+                'academic_year'  => $validated['academicYear'],
+                'study_group_id' => $validated['studyGroup'] ?? null,
+                'shift_id'       => $validated['shiftId'] ?? null,
+                'medium_id'      => $validated['mediumId'] ?? null,
+                'status'         => $validated['status'],
+                'max_students'   => $validated['maxStudents'] ?? null,
+                'description'    => $validated['description'] ?? null,
+            ], $validated['section'] ?? null, $validated['subjects'] ?? [], $teacher, $request->user(), $validated['sectionTitle'] ?? null);
+
+            if (! $result['created']) {
+                return redirect()
+                    ->back()
+                    ->withErrors(['className' => 'That class and section already exist for this academic year' . ($validated['studyGroup'] ?? null ? ' and study group' : '') . '.'])
+                    ->withInput();
+            }
 
             return redirect()
                 ->route('classes.index')
-                ->with('success', 'Class created successfully! 🎉');
+                ->with('success', SchoolClass::describeCreation($result));
 
         } catch (\Throwable $e) {
             return redirect()
@@ -158,6 +161,8 @@ class SchoolClassController extends Controller
      */
     public function show(SchoolClass $class)
     {
+        abort_unless(request()->user()->canDo('classes.view', $class), 403);
+
         return Inertia::render('show', [
             'class' => $class,
         ]);
@@ -187,6 +192,9 @@ class SchoolClassController extends Controller
     public function update(Request $request, SchoolClass $class)
     {
         $validated = $request->validate([
+            'studyGroup' => ['nullable', 'integer', 'exists:study_groups,id'],
+            'shiftId' => ['nullable', 'integer', 'exists:shifts,id'],
+            'mediumId' => ['nullable', 'integer', 'exists:mediums,id'],
             'className' => [
                 'required',
                 'string',
@@ -245,6 +253,10 @@ class SchoolClassController extends Controller
         // Check if class with same name and section already exists (excluding current)
         $exists = SchoolClass::where('class_name', $validated['className'])
             ->where('section', $validated['section'] ?? null)
+            ->where('academic_year', $validated['academicYear'])
+            ->where('study_group_id', $request->has('studyGroup') ? ($validated['studyGroup'] ?? null) : $class->study_group_id)
+            ->where('shift_id', $validated['shiftId'] ?? $class->shift_id)
+            ->where('medium_id', $validated['mediumId'] ?? $class->medium_id)
             ->where('id', '!=', $class->id)
             ->exists();
 
@@ -277,12 +289,16 @@ class SchoolClassController extends Controller
                 'class_name' => $validated['className'],
                 'section' => $validated['section'] ?? null,
                 'academic_year' => $validated['academicYear'],
-                'class_teacher' => $teacher->name,
+                'study_group_id' => $request->has('studyGroup') ? ($validated['studyGroup'] ?? null) : $class->study_group_id,
+                'shift_id'       => $validated['shiftId'] ?? $class->shift_id,
+                'medium_id'      => $validated['mediumId'] ?? $class->medium_id,
                 'status' => $validated['status'],
-                'subjects' => $validated['subjects'],
                 'max_students' => $validated['maxStudents'] ?? null,
                 'description' => $validated['description'] ?? null,
             ]);
+
+            $class->syncSubjects($validated['subjects']);
+            $class->assignTeacher($teacher, $request->user());
 
             return redirect()
                 ->route('classes.index')
@@ -301,6 +317,12 @@ class SchoolClassController extends Controller
      */
     public function destroy(SchoolClass $class)
     {
+        if ($class->students()->exists()) {
+            return redirect()
+                ->back()
+                ->with('error', 'Cannot delete this class: it still has students. Move or remove them first.');
+        }
+
         try {
             $class->delete();
 

@@ -223,11 +223,11 @@ const submit = () => {
                                 <input
                                     id="email"
                                     v-model="form.email"
-                                    type="email"
+                                    type="text"
                                     required
                                     autofocus
                                     autocomplete="username"
-                                    placeholder="Username / Email"
+                                    placeholder="Email or 8-digit ID"
                                     class="w-full rounded-xl border border-slate-200 dark:border-[#1E3A8A]/40 bg-white dark:bg-[#0B1220] py-3 xl:py-3.5 pl-11 pr-4 text-[13px] xl:text-[14px] text-slate-700 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none transition focus:border-[#0B4F9E] dark:focus:border-[#60A5FA] focus:ring-4 focus:ring-[#0B4F9E]/10 dark:focus:ring-[#60A5FA]/10"
                                 />
                             </div>

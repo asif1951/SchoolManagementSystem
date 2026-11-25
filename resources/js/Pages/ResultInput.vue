@@ -22,6 +22,9 @@ const props = defineProps({
     filters: { type: Object, default: () => ({}) },
     availableYears: { type: Array, default: () => [] },
     classNames: { type: Array, default: () => [] },
+    groups: { type: Array, default: () => [] },
+    shifts: { type: Array, default: () => [] },
+    mediums: { type: Array, default: () => [] },
     sections: { type: Array, default: () => [] },
     selectedYear: { type: String, default: '' },
     isAdmin: { type: Boolean, default: false },
@@ -216,6 +219,9 @@ const handleYearChange = () => {
     // ✅ Year change hole class & section reset (year onujayi class alada)
     classFilter.value = ''
     sectionFilter.value = ''
+    groupFilter.value = ''
+    shiftFilter.value = ''
+    mediumFilter.value = ''
 
     router.get(route('results.index'), {
         academic_year: selectedYear.value,
@@ -233,6 +239,9 @@ const handleYearChange = () => {
 const classSearch = ref(props.filters?.search || '')
 const classFilter = ref(props.filters?.class_name || '')
 const sectionFilter = ref(props.filters?.section || '')
+const groupFilter = ref(props.filters?.group || '')
+const shiftFilter = ref(props.filters?.shift || '')
+const mediumFilter = ref(props.filters?.medium || '')
 let classSearchTimeout = null
 
 watch(classSearch, () => {
@@ -247,6 +256,9 @@ const fetchClasses = (page = 1) => {
         academic_year: selectedYear.value,
         class_name: classFilter.value || undefined,
         section: sectionFilter.value || undefined,
+        group: groupFilter.value || undefined,
+        shift: shiftFilter.value || undefined,
+        medium: mediumFilter.value || undefined,
         search: classSearch.value || undefined,
         page,
     }, {
@@ -257,6 +269,10 @@ const fetchClasses = (page = 1) => {
 }
 
 // ✅ Class select kora hole section reset hoy, tarpor backend theke notun list ashe
+const handleGroupFilterChange = () => {
+    fetchClasses(1)
+}
+
 const handleClassFilterChange = () => {
     sectionFilter.value = ''
     fetchClasses(1)
@@ -859,6 +875,26 @@ onBeforeUnmount(() => {
                         <!-- ✅ Class & Section Filter (backend) -->
                         <div class="flex items-center gap-2 w-full sm:w-auto">
                             <select
+                                v-if="groups.length"
+                                v-model="groupFilter"
+                                @change="handleGroupFilterChange"
+                                class="flex-1 sm:flex-none sm:w-36 rounded-xl border-2 border-indigo-200 dark:border-indigo-700 bg-white dark:bg-slate-800 px-3 py-2 sm:py-2.5 text-sm font-semibold text-indigo-800 dark:text-indigo-200 outline-none cursor-pointer focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
+                            >
+                                <option value="">All Groups</option>
+                                <option v-for="g in groups" :key="g.id" :value="String(g.id)">{{ g.name }}</option>
+                            </select>
+
+                            <select v-if="shifts.length > 1" v-model="shiftFilter" @change="fetchClasses(1)" class="flex-1 sm:flex-none sm:w-32 rounded-xl border-2 border-indigo-200 dark:border-indigo-700 bg-white dark:bg-slate-800 px-3 py-2 sm:py-2.5 text-sm font-semibold text-indigo-800 dark:text-indigo-200 outline-none cursor-pointer focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10">
+                                <option value="">All Shifts</option>
+                                <option v-for="x in shifts" :key="x.id" :value="String(x.id)">{{ x.name }}</option>
+                            </select>
+
+                            <select v-if="mediums.length > 1" v-model="mediumFilter" @change="fetchClasses(1)" class="flex-1 sm:flex-none sm:w-32 rounded-xl border-2 border-indigo-200 dark:border-indigo-700 bg-white dark:bg-slate-800 px-3 py-2 sm:py-2.5 text-sm font-semibold text-indigo-800 dark:text-indigo-200 outline-none cursor-pointer focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10">
+                                <option value="">All Mediums</option>
+                                <option v-for="x in mediums" :key="x.id" :value="String(x.id)">{{ x.name }}</option>
+                            </select>
+
+                            <select
                                 v-model="classFilter"
                                 @change="handleClassFilterChange"
                                 class="flex-1 sm:flex-none sm:w-40 rounded-xl border-2 border-indigo-200 dark:border-indigo-700 bg-white dark:bg-slate-800 px-3 py-2 sm:py-2.5 text-sm font-semibold text-indigo-800 dark:text-indigo-200 outline-none cursor-pointer focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
@@ -970,10 +1006,10 @@ onBeforeUnmount(() => {
                                 </div>
 
                                 <h3 class="text-lg sm:text-xl font-bold text-indigo-900 dark:text-indigo-100 mb-1 truncate">
-                                    {{ cls.class_name }}
+                                    {{ cls.class_label || cls.class_name }}
                                 </h3>
                                 <p class="text-sm font-semibold text-purple-600 dark:text-purple-400 mb-1">
-                                    Section: {{ cls.section || 'N/A' }}
+                                    Section: {{ cls.section || 'N/A' }}<template v-if="cls.group"> · {{ cls.group }}</template><template v-if="cls.shift"> · {{ cls.shift }} · {{ cls.medium }}</template>
                                 </p>
 
                                 <p v-if="isAdmin" class="text-xs text-indigo-500 dark:text-indigo-400 mb-3 flex items-center gap-1 font-medium">
@@ -1072,7 +1108,7 @@ onBeforeUnmount(() => {
                             </div>
                             <div class="min-w-0">
                                 <h1 class="text-lg sm:text-2xl font-bold bg-gradient-to-r from-indigo-800 to-purple-800 dark:from-indigo-300 dark:to-purple-300 bg-clip-text text-transparent truncate">
-                                    {{ classInfo.class_name }} — {{ classInfo.section }}
+                                    {{ classInfo.class_label || classInfo.class_name }}<template v-if="classInfo.group"> ({{ classInfo.group }})</template> — {{ classInfo.section_label || classInfo.section }}<template v-if="classInfo.shift"> · {{ classInfo.shift }} · {{ classInfo.medium }}</template>
                                 </h1>
                                 <p class="text-xs sm:text-sm text-indigo-500 dark:text-indigo-400 mt-0.5">
                                     {{ subjects.length }} subjects · {{ students.total || 0 }} students

@@ -1,5 +1,9 @@
 import '../css/app.css';
 import './bootstrap';
+import { installSearchableSelects } from './searchable-select';
+
+// every dropdown in the system can be typed into (see searchable-select.js)
+installSearchableSelects();
 
 // ============================================================
 // ✅ EARLY THEME INIT — before Vue mounts

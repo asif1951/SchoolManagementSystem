@@ -16,15 +16,25 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware) {
         // ✅ Existing web middleware
         $middleware->web(append: [
+            \App\Http\Middleware\SetLocale::class,
             \App\Http\Middleware\HandleInertiaRequests::class,
             \Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets::class,
         ]);
 
         // ✅ Role middleware alias register
         $middleware->alias([
-            'role' => RoleMiddleware::class,
+            'role'   => RoleMiddleware::class,
+            'active' => \App\Http\Middleware\EnsureUserIsActive::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
-        //
+        // A business rule that refuses an action (for example a transferred student being made active by the edit form)
+        // is shown to the person as a message, not as a crash.
+        $exceptions->render(function (\DomainException $e, \Illuminate\Http\Request $request) {
+            if ($request->expectsJson() && ! $request->header('X-Inertia')) {
+                return response()->json(['message' => $e->getMessage()], 422);
+            }
+
+            return back()->with('error', $e->getMessage());
+        });
     })->create();

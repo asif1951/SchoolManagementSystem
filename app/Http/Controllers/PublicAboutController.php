@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
 
 class PublicAboutController extends Controller
@@ -13,29 +12,17 @@ class PublicAboutController extends Controller
     {
         // ---------- About section (from website_abouts table) ----------
         $about = Cache::remember('website_about', 60, function () {
-            if (!Schema::hasTable('website_abouts')) return null;
             return DB::table('website_abouts')->first();
         });
 
         // ---------- Website settings (logo, motto, established_year etc.) ----------
         $settings = null;
-        if (Schema::hasTable('website_settings')) {
-            $settings = DB::table('website_settings')->first();
-        }
+        $settings = DB::table('website_settings')->first();
 
         // ---------- Teachers preview (top 4 active) ----------
         $teachers = Cache::remember('about_teachers_preview_v2', 60, function () {
-            if (!Schema::hasTable('teachers')) return collect();
-
             // Base columns
-            $columns = ['id', 'name', 'designation', 'department', 'qualification', 'photo'];
-
-            // Contact columns (added only if they exist in the table)
-            foreach (['phone', 'email'] as $col) {
-                if (Schema::hasColumn('teachers', $col)) {
-                    $columns[] = $col;
-                }
-            }
+            $columns = ['id', 'name', 'designation', 'department', 'qualification', 'photo', 'phone', 'email'];
 
             return DB::table('teachers')
                 ->where('status', 'active')
@@ -49,37 +36,21 @@ class PublicAboutController extends Controller
         $currentYear = (int) date('Y');
 
         $totalStudents = 0;
-        if (Schema::hasTable('students')) {
-            $q = DB::table('students');
-            if (Schema::hasColumn('students', 'academic_year')) {
-                $q->where('academic_year', (string) $currentYear);
-            }
-            if (Schema::hasColumn('students', 'status')) {
-                $q->where('status', 'active');
-            }
-            $totalStudents = $q->count();
-        }
+        $q = DB::table('students')->whereNull('deleted_at');
+        $q->where('academic_year', (string) $currentYear);
+        $q->where('status', 'active');
+        $totalStudents = $q->count();
 
         $totalTeachers = 0;
-        if (Schema::hasTable('teachers')) {
-            $q = DB::table('teachers');
-            if (Schema::hasColumn('teachers', 'status')) {
-                $q->where('status', 'active');
-            }
-            $totalTeachers = $q->count();
-        }
+        $q = DB::table('teachers');
+        $q->where('status', 'active');
+        $totalTeachers = $q->count();
 
         $totalClasses = 0;
-        if (Schema::hasTable('classes')) {
-            $q = DB::table('classes');
-            if (Schema::hasColumn('classes', 'status')) {
-                $q->where('status', 'active');
-            }
-            if (Schema::hasColumn('classes', 'academic_year')) {
-                $q->where('academic_year', (string) $currentYear);
-            }
-            $totalClasses = $q->distinct()->count('class_name');
-        }
+        $q = DB::table('classes');
+        $q->where('status', 'active');
+        $q->where('academic_year', (string) $currentYear);
+        $totalClasses = $q->distinct()->count('class_name');
 
         $establishedYear = 2009;
         if ($settings && !empty($settings->established_year)) {

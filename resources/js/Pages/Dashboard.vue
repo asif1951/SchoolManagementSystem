@@ -139,7 +139,7 @@ const statCards = computed(() => [
         bg: 'from-emerald-50 to-teal-50/50 dark:from-emerald-950/30 dark:to-teal-950/20',
         ring: 'ring-emerald-200/60 dark:ring-emerald-800/40',
         text: 'text-emerald-600 dark:text-emerald-400',
-        href: '/students',
+        href: '/student-module/students',
     },
     {
         key: 'teachers',
@@ -606,7 +606,7 @@ const activityColors = {
                                                     {{ c.id }}
                                                 </span>
                                                 <span class="font-semibold text-slate-800 dark:text-slate-100 truncate">
-                                                    {{ c.class_name }}
+                                                    {{ c.class_label || c.class_name }}
                                                 </span>
                                             </div>
                                         </td>

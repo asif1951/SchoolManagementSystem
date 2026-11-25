@@ -75,14 +75,6 @@ const getStatusBadge = (status) => {
                         <p class="text-[9px] font-bold text-blue-600 uppercase tracking-wider">Academic Year</p>
                         <p class="text-xs font-bold text-blue-950 mt-0.5">{{ student.academic_year }}</p>
                     </div>
-                    <div class="p-3 rounded-lg bg-purple-50 border border-purple-100">
-                        <p class="text-[9px] font-bold text-purple-600 uppercase tracking-wider">Date of Birth</p>
-                        <p class="text-xs font-bold text-purple-950 mt-0.5">{{ student.date_of_birth || 'N/A' }}</p>
-                    </div>
-                    <div class="p-3 rounded-lg bg-red-50 border border-red-100">
-                        <p class="text-[9px] font-bold text-red-600 uppercase tracking-wider">Blood Group</p>
-                        <p class="text-xs font-bold text-red-950 mt-0.5">{{ student.blood_group || 'N/A' }}</p>
-                    </div>
                     <div class="p-3 rounded-lg bg-orange-50 border border-orange-100">
                         <p class="text-[9px] font-bold text-orange-600 uppercase tracking-wider">Gender</p>
                         <p class="text-xs font-bold text-orange-950 mt-0.5 capitalize">{{ student.gender || 'N/A' }}</p>
@@ -91,13 +83,6 @@ const getStatusBadge = (status) => {
                         <p class="text-[9px] font-bold text-teal-600 uppercase tracking-wider">Admission</p>
                         <p class="text-xs font-bold text-teal-950 mt-0.5">{{ student.admission_date || 'N/A' }}</p>
                     </div>
-                </div>
-
-                <!-- Father Info -->
-                <div class="p-3 rounded-lg bg-slate-50 border border-slate-200">
-                    <p class="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Father's Name</p>
-                    <p class="text-xs font-bold text-slate-800 mt-0.5">{{ student.father_name || 'N/A' }}</p>
-                    <p class="text-xs text-slate-600 mt-1">📞 {{ student.father_phone || 'N/A' }}</p>
                 </div>
 
                 <!-- Verified Badge -->

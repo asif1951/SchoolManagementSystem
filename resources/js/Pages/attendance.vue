@@ -982,7 +982,7 @@ onBeforeUnmount(() => {
 
                                 <!-- Class name + section -->
                                 <h3 class="text-lg sm:text-xl font-bold text-indigo-900 dark:text-indigo-100 mb-1 truncate">
-                                    {{ cls.class_name }}
+                                    {{ cls.class_label || cls.class_name }}
                                 </h3>
                                 <p class="text-sm font-semibold text-purple-600 dark:text-purple-400 mb-2">
                                     Section: {{ cls.section || 'N/A' }}
@@ -1110,7 +1110,7 @@ onBeforeUnmount(() => {
                             </div>
                             <div class="min-w-0">
                                 <h1 class="text-lg sm:text-2xl font-bold bg-gradient-to-r from-indigo-800 to-purple-800 dark:from-indigo-300 dark:to-purple-300 bg-clip-text text-transparent truncate">
-                                    {{ classInfo.class_name }} — {{ classInfo.section }}
+                                    {{ classInfo.class_label || classInfo.class_name }} — {{ classInfo.section_label || classInfo.section }}
                                 </h1>
                                 <p class="text-xs sm:text-sm text-indigo-500 dark:text-indigo-400 mt-0.5">
                                     Year: {{ classInfo.academic_year }}
@@ -1247,7 +1247,7 @@ onBeforeUnmount(() => {
                                     <div class="min-w-0">
                                         <h3 class="text-base sm:text-lg font-bold text-indigo-900 dark:text-indigo-100 truncate">Attendance Records</h3>
                                         <p class="text-xs text-indigo-500 dark:text-indigo-400 truncate">
-                                            {{ classInfo.class_name }} — {{ classInfo.section || 'N/A' }} · {{ classInfo.academic_year }}
+                                            {{ classInfo.class_label || classInfo.class_name }} — {{ classInfo.section_label || classInfo.section || 'N/A' }} · {{ classInfo.academic_year }}
                                         </p>
                                     </div>
                                 </div>

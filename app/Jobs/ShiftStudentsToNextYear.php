@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Models\SchoolClass;
 use App\Models\Student;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -20,8 +21,7 @@ class ShiftStudentsToNextYear implements ShouldQueue
 
     public function __construct(
         public array  $studentIds,
-        public string $targetClass,
-        public string $targetSection,
+        public int    $targetClassId,
         public int    $fromYear,
         public int    $toYear,
         public int    $userId,
@@ -35,26 +35,16 @@ class ShiftStudentsToNextYear implements ShouldQueue
         $skipped   = 0;
         $now       = now();
 
-        // ⭐ Section empty হলে NULL হবে — source student এর section কখনো copy হবে না
-        $sectionValue = ($this->targetSection === '' || $this->targetSection === null)
+        // ⭐ Target class is resolved once, by id — class/section text always comes from it
+        $targetClass  = SchoolClass::findOrFail($this->targetClassId);
+        $sectionValue = ($targetClass->section === '' || $targetClass->section === null)
             ? null
-            : $this->targetSection;
+            : $targetClass->section;
 
-        // ⭐ Duplicate check — name + father + DOB combo
-        $sourceIds = $this->studentIds;
-
-        $existingKeys = Student::where('academic_year', $this->toYear)
-            ->whereIn('student_name', function ($q) use ($sourceIds) {
-                $q->select('student_name')
-                  ->from('students')
-                  ->whereIn('id', $sourceIds);
-            })
-            ->get(['student_name', 'father_name', 'date_of_birth'])
-            ->map(function ($s) {
-                return strtolower(trim($s->student_name ?? '')) . '|' .
-                       strtolower(trim($s->father_name ?? '')) . '|' .
-                       ($s->date_of_birth ?? '');
-            })
+        // ⭐ Already in the target year? The student_id is permanent, so it is an exact match.
+        $existingIds = Student::where('academic_year', $this->toYear)
+            ->whereIn('student_id', Student::whereIn('id', $this->studentIds)->select('student_id'))
+            ->pluck('student_id')
             ->flip();
 
         $batch = [];
@@ -63,27 +53,21 @@ class ShiftStudentsToNextYear implements ShouldQueue
             ->orderBy('id')
             ->chunkById(500, function ($students) use (
                 &$batch, &$inserted, &$skipped, &$processed,
-                $existingKeys, $now, $total, $sectionValue
+                $existingIds, $now, $total, $sectionValue, $targetClass
             ) {
                 foreach ($students as $src) {
                     $processed++;
 
-                    // ⭐ Same key for comparison
-                    $srcKey = strtolower(trim($src->student_name ?? '')) . '|' .
-                              strtolower(trim($src->father_name ?? '')) . '|' .
-                              ($src->date_of_birth ?? '');
-
-                    if ($existingKeys->has($srcKey)) {
+                    if ($existingIds->has($src->student_id)) {
                         $skipped++;
                         continue;
                     }
 
-                    // ⭐ Year-suffixed student_id
-                    $newStudentId = $this->buildShiftedStudentId($src->student_id, $this->toYear);
-
                     $batch[] = [
                         'student_name'      => $src->student_name,
-                        'student_id'        => $newStudentId,
+                        'student_id'        => $src->student_id,      // same ID for life
+                        'promoted_from_id'  => $src->id,
+                        'public_token'      => (string) \Illuminate\Support\Str::ulid(),
                         'date_of_birth'     => $src->date_of_birth,
                         'gender'            => $src->gender,
                         'blood_group'       => $src->blood_group,
@@ -104,9 +88,7 @@ class ShiftStudentsToNextYear implements ShouldQueue
                         'roll_number'       => $src->roll_number,
 
                         // NEW class + section + year
-                        'class'             => $this->targetClass,
-                        // ⭐ Section: খালি থাকলে NULL, নাহলে selected section
-                        'section'           => $sectionValue,
+                        'class_id'          => $targetClass->id,
                         'academic_year'     => $this->toYear,
 
                         'created_at'        => $now,
@@ -136,7 +118,7 @@ class ShiftStudentsToNextYear implements ShouldQueue
             'done'     => true,
             'inserted' => $inserted,
             'skipped'  => $skipped,
-            'class'    => $this->targetClass,
+            'class'    => $targetClass->class_name,
             'section'  => $sectionValue,
             'year'     => $this->toYear,
             'at'       => now()->toDateTimeString(),
@@ -148,21 +130,9 @@ class ShiftStudentsToNextYear implements ShouldQueue
             'user_id'  => $this->userId,
             'inserted' => $inserted,
             'skipped'  => $skipped,
-            'class'    => $this->targetClass,
+            'class'    => $targetClass->class_name,
             'section'  => $sectionValue,
             'year'     => $this->toYear,
         ]);
-    }
-
-    /**
-     * ⭐ Build a new student_id with the target year suffix.
-     */
-    private function buildShiftedStudentId(string $oldId, int $newYear): string
-    {
-        if (preg_match('/^(.+)-(\d{4})$/', $oldId, $m)) {
-            return $m[1] . '-' . $newYear;
-        }
-
-        return $oldId . '-' . $newYear;
     }
 }

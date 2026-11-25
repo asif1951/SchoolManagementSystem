@@ -1,14 +1,15 @@
 <?php
 
 use App\Http\Controllers\AttendanceController;
-use App\Http\Controllers\Auth\AuthenticatedSessionController;
-use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\ClassesmanagementController;
 use App\Http\Controllers\CollectFeesController;
 use App\Http\Controllers\ContactMessageController;
+use App\Http\Controllers\CurriculumController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\ExamController;
+use App\Http\Controllers\ExamSettingsController;
+use App\Http\Controllers\ExamSetupController;
 use App\Http\Controllers\FeeController;
-use App\Http\Controllers\FeesManagementController;
 use App\Http\Controllers\GalleryController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\NoticeController;
@@ -16,11 +17,33 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PublicAboutController;
 use App\Http\Controllers\PublicContactController;
 use App\Http\Controllers\PublicResultController;
-use App\Http\Controllers\ResultInputController; // ✅ রিনেম করা হয়েছে
+use App\Http\Controllers\ResultInputController;
+use App\Http\Controllers\RoleController;
 use App\Http\Controllers\SchoolClassController;
 use App\Http\Controllers\StudentController;
+use App\Http\Controllers\StudyGroupController;
+use App\Http\Controllers\ClassSettingsController;
+use App\Http\Controllers\ReportController;
+use App\Http\Controllers\StudentStatusController;
+use App\Http\Controllers\StudentModule\ChangeRequestController;
+use App\Http\Controllers\StudentModule\ImportController;
+use App\Http\Controllers\PublicApplyController;
+use App\Http\Controllers\StudentModule\AdmissionPaymentController;
+use App\Http\Controllers\StudentModule\CertificateController;
+use App\Http\Controllers\StudentModule\OnlineAdmissionController;
+use App\Http\Controllers\Routine\RoutineController;
+use App\Http\Controllers\StudentModule\PhotoController;
+use App\Http\Controllers\StudentModule\StudentReportController;
+use App\Http\Controllers\StudentModule\StudentSubjectController;
+use App\Http\Controllers\StudentModule\TransferController;
+use App\Http\Controllers\StudentModule\PromotionController;
+use App\Http\Controllers\StudentModule\StudentModuleController;
+use App\Http\Controllers\StudentModule\TaskController;
+use App\Http\Controllers\SubjectController;
+use App\Http\Controllers\SubjectTeacherController;
 use App\Http\Controllers\StudentManagementController;
 use App\Http\Controllers\StudentResultController;
+use App\Http\Controllers\TabulationController;
 use App\Http\Controllers\TeacherController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\WebsiteAboutController;
@@ -29,42 +52,22 @@ use App\Http\Controllers\WebsiteEventController;
 use App\Http\Controllers\WebsiteHeroController;
 use App\Http\Controllers\WebsiteSettingsController;
 use Illuminate\Support\Facades\Route;
-use Illuminate\Support\Facades\Auth;
-use Inertia\Inertia;
 
-// ============================================================
-// ✅ HELPER — Admin/Staff Check (middleware ছাড়াই)
-// ============================================================
-if (!function_exists('checkAdmin')) {
-    function checkAdmin()
-    {
-        if (!auth()->check()) {
-            return redirect()->route('login');
-        }
-        if (auth()->user()->role !== 'admin') {
-            abort(403, 'Unauthorized — Admin access required.');
-        }
-        return null;
-    }
-}
-
-
-if (!function_exists('checkStaff')) {
-    function checkStaff()
-    {
-        $user = Auth::user();    // ← Facade — editor জানে
-
-        if (!$user) {
-            return redirect()->route('login');
-        }
-
-        if (!in_array($user->role, ['admin', 'teacher'], true)) {
-            abort(403, 'Unauthorized — Staff access required.');
-        }
-
-        return null;
-    }
-}
+/*
+|--------------------------------------------------------------------------
+| Access control
+|--------------------------------------------------------------------------
+| Every protected route lives inside one of the groups below, so a new route
+| is protected by default simply by being placed in the right group:
+|
+|   auth     → must be logged in
+|   verified → email verified
+|   active   → account status must be "active" (suspended/inactive are logged out)
+|   role:x   → role check (App\Http\Middleware\RoleMiddleware)
+|
+| Using controller actions (no closures) also makes `php artisan route:cache`
+| possible in production.
+*/
 
 // ============================================================
 // PUBLIC ROUTES
@@ -74,496 +77,429 @@ Route::get('/', [HomeController::class, 'index'])->name('home');
 Route::get('/teachers', [TeacherController::class, 'publicIndex'])->name('teachers');
 
 Route::get('/result', [PublicResultController::class, 'index'])->name('result');
-Route::post('/result/fetch', [PublicResultController::class, 'fetch'])->name('result.fetch');
+Route::post('/result/fetch', [PublicResultController::class, 'fetch'])
+    ->middleware('throttle:20,1')
+    ->name('result.fetch');
 
 Route::get('/contact', [PublicContactController::class, 'index'])->name('contact');
+Route::post('/contact', [ContactMessageController::class, 'store'])
+    ->middleware('throttle:5,1')
+    ->name('contact.store');
+
 Route::get('/about', [PublicAboutController::class, 'index'])->name('about');
 
-Route::get('/student/{student}/verify', [StudentController::class, 'verify'])->name('students.verify');
-
+// QR verification page — unguessable token, rate limited, minimal data.
+Route::get('/student/{token}/verify', [StudentController::class, 'verify'])
+    ->middleware('throttle:30,1')
+    ->where('token', '[0-9A-Za-z]{26}')
+    ->name('students.verify');
 
 // ============================================================
-// ✅ ADMIN-ONLY ROUTES — Inline Check
+// ADMINISTRATION — each route asks for its own ability
+// (admin has every ability; other roles get them from Roles & Permissions)
 // ============================================================
-Route::middleware(['auth', 'verified'])->group(function () {
+// the public online admission form (no login): rate-limited, with a honeypot
+Route::get('/apply', [PublicApplyController::class, 'show'])->name('apply.show');
+Route::post('/apply', [PublicApplyController::class, 'store'])->middleware('throttle:5,10')->name('apply.store');
 
-    // Dashboard — admin only
-    Route::get('/dashboard', function () {
-        if ($r = checkAdmin()) return $r;
-        return app(DashboardController::class)->index(request());
-    })->name('dashboard');
+// language of the interface (English / Bangla), kept in the session; also used by the public form
+Route::post('/locale', function (\Illuminate\Http\Request $request) {
+    $locale = $request->validate(['locale' => ['required', 'in:en,bn']])['locale'];
+    $request->session()->put('locale', $locale);
 
-    // =========================
-    // Users Management
-    // =========================
-    Route::get('/users', function () {
-        if ($r = checkAdmin()) return $r;
-        return app(UserController::class)->index(request());
-    })->name('users');
+    return back();
+})->middleware('throttle:30,1')->name('locale');
 
-    Route::post('/users', function () {
-        if ($r = checkAdmin()) return $r;
-        return app(UserController::class)->store(request());
-    })->name('users.store');
+Route::middleware(['auth', 'verified', 'active'])->group(function () {
 
-    Route::put('/users/{id}', function ($id) {
-        if ($r = checkAdmin()) return $r;
-        return app(UserController::class)->update(request(), $id);
-    })->name('users.update');
+    Route::get('/dashboard', [DashboardController::class, 'index'])->middleware('can:dashboard.view')->name('dashboard');
 
-    Route::delete('/users/{id}', function ($id) {
-        if ($r = checkAdmin()) return $r;
-        return app(UserController::class)->destroy(request(), $id);
-    })->name('users.destroy');
-
-    // =========================
-    // Website Management — admin only
-    // =========================
-    Route::prefix('website-management')->name('website-management.')->group(function () {
-
-        Route::get('/settings', function () {
-            if ($r = checkAdmin()) return $r;
-            return app(WebsiteSettingsController::class)->edit(request());
-        })->name('settings');
-
-        Route::post('/settings', function () {
-            if ($r = checkAdmin()) return $r;
-            return app(WebsiteSettingsController::class)->update(request());
-        })->name('settings.update');
-
-        Route::get('/home-page', function () {
-            if ($r = checkAdmin()) return $r;
-            return app(WebsiteHeroController::class)->edit(request());
-        })->name('home-page');
-
-        Route::post('/home-page', function () {
-            if ($r = checkAdmin()) return $r;
-            return app(WebsiteHeroController::class)->update(request());
-        })->name('home-page.update');
-
-        Route::get('/about-school', function () {
-            if ($r = checkAdmin()) return $r;
-            return app(WebsiteAboutController::class)->edit(request());
-        })->name('about-school');
-
-        Route::post('/about-school', function () {
-            if ($r = checkAdmin()) return $r;
-            return app(WebsiteAboutController::class)->update(request());
-        })->name('about-school.update');
-
-        Route::get('/events', function () {
-            if ($r = checkAdmin()) return $r;
-            return app(WebsiteEventController::class)->index(request());
-        })->name('events');
-
-        Route::post('/events', function () {
-            if ($r = checkAdmin()) return $r;
-            return app(WebsiteEventController::class)->store(request());
-        })->name('events.store');
-
-        Route::post('/events/{event}', function ($event) {
-    if ($r = checkAdmin()) return $r;
-
-    $event = \App\Models\WebsiteEvent::findOrFail($event);
-
-    return app(WebsiteEventController::class)->update(request(), $event);
-})->name('events.update');
-
-        Route::delete('/events/{event}', function ($event) {
-    if ($r = checkAdmin()) return $r;
-
-    $event = \App\Models\WebsiteEvent::findOrFail($event);
-
-    return app(WebsiteEventController::class)->destroy($event);
-})->name('events.destroy');
-
-        Route::get('/contact-info', function () {
-            if ($r = checkAdmin()) return $r;
-            return app(WebsiteContactController::class)->edit(request());
-        })->name('contact-info');
-
-        Route::post('/contact-info', function () {
-            if ($r = checkAdmin()) return $r;
-            return app(WebsiteContactController::class)->update(request());
-        })->name('contact-info.update');
-
-        Route::get('/messages', function () {
-            if ($r = checkAdmin()) return $r;
-            return app(ContactMessageController::class)->index(request());
-        })->name('messages');
-
-        Route::post('/messages/{message}/read', function ($message) {
-            if ($r = checkAdmin()) return $r;
-            return app(ContactMessageController::class)->markRead(request(), $message);
-        })->name('messages.mark-read');
-
-        Route::post('/messages/{message}/unread', function ($message) {
-            if ($r = checkAdmin()) return $r;
-            return app(ContactMessageController::class)->markUnread(request(), $message);
-        })->name('messages.mark-unread');
-
-        Route::post('/messages/{message}/reply', function ($message) {
-            if ($r = checkAdmin()) return $r;
-            return app(ContactMessageController::class)->reply(request(), $message);
-        })->name('messages.reply');
-
-        Route::delete('/messages/{message}', function ($message) {
-            if ($r = checkAdmin()) return $r;
-            return app(ContactMessageController::class)->destroy(request(), $message);
-        })->name('messages.destroy');
-
-        Route::get('/notices', function () {
-            if ($r = checkAdmin()) return $r;
-            return app(NoticeController::class)->index(request());
-        })->name('notices');
-
-        Route::post('/notices', function () {
-            if ($r = checkAdmin()) return $r;
-            return app(NoticeController::class)->store(request());
-        })->name('notices.store');
-
-       Route::post('/notices/{notice}', function ($notice) {
-    if ($r = checkAdmin()) return $r;
-
-    $notice = \App\Models\Notice::findOrFail($notice);
-
-    return app(NoticeController::class)->update(request(), $notice);
-})->name('notices.update');
-
-Route::delete('/notices/{notice}', function ($notice) {
-    if ($r = checkAdmin()) return $r;
-
-    $notice = \App\Models\Notice::findOrFail($notice);
-
-    return app(NoticeController::class)->destroy($notice);
-})->name('notices.destroy');
-
-        Route::post('/notices/{notice}/toggle-featured', function ($notice) {
-            if ($r = checkAdmin()) return $r;
-            return app(NoticeController::class)->toggleFeatured(request(), $notice);
-        })->name('notices.toggle-featured');
-
-        Route::get('/teachers-staff', function () {
-            if ($r = checkAdmin()) return $r;
-            return app(TeacherController::class)->index(request());
-        })->name('teachers-staff');
-
-        Route::post('/teachers-staff', function () {
-            if ($r = checkAdmin()) return $r;
-            return app(TeacherController::class)->store(request());
-        })->name('teachers-staff.store');
-
-        Route::post('/teachers-staff/{teacher}', function ($teacher) {
-    if ($r = checkAdmin()) return $r;
-
-    $teacherModel = \App\Models\Teacher::findOrFail($teacher);
-
-    return app(TeacherController::class)->update(request(), $teacherModel);
-})->name('teachers-staff.update');
-
-        Route::delete('/teachers-staff/{teacher}', function ($teacher) {
-            if ($r = checkAdmin()) return $r;
-            return app(TeacherController::class)->destroy(request(), $teacher);
-        })->name('teachers-staff.destroy');
-
-        Route::get('/gallery', function () {
-            if ($r = checkAdmin()) return $r;
-            return Inertia::render('WebsiteManagement/Gallery');
-        })->name('gallery');
+    // Users
+    Route::middleware('can:users.manage')->group(function () {
+        Route::get('/users', [UserController::class, 'index'])->name('users');
+        Route::post('/users', [UserController::class, 'store'])->name('users.store');
+        Route::put('/users/{id}', [UserController::class, 'update'])->name('users.update');
+        Route::delete('/users/{id}', [UserController::class, 'destroy'])->name('users.destroy');
     });
+
+    // Subject list (master data for classes and exams)
+    Route::middleware('can:subjects.manage')->group(function () {
+        Route::get('/subjects', [SubjectController::class, 'index'])->name('subjects.index');
+        Route::post('/subjects', [SubjectController::class, 'store'])->name('subjects.store');
+        Route::post('/subjects/bulk', [SubjectController::class, 'storeMany'])->name('subjects.store-many');
+        Route::put('/subjects/{subject}', [SubjectController::class, 'update'])->name('subjects.update');
+        Route::delete('/subjects/{subject}', [SubjectController::class, 'destroy'])->name('subjects.destroy');
+
+        Route::get('/study-groups', [StudyGroupController::class, 'index'])->name('study-groups.index');
+        Route::post('/study-groups', [StudyGroupController::class, 'store'])->name('study-groups.store');
+        Route::put('/study-groups/{group}', [StudyGroupController::class, 'update'])->name('study-groups.update');
+        Route::delete('/study-groups/{group}', [StudyGroupController::class, 'destroy'])->name('study-groups.destroy');
+
+        Route::get('/curriculum', [CurriculumController::class, 'index'])->name('curriculum.index');
+        Route::post('/curriculum', [CurriculumController::class, 'store'])->name('curriculum.store');
+        Route::post('/curriculum/bulk', [CurriculumController::class, 'storeMany'])->name('curriculum.store-many');
+        Route::post('/curriculum/apply', [CurriculumController::class, 'apply'])->name('curriculum.apply');
+        Route::put('/curriculum/{row}', [CurriculumController::class, 'update'])->name('curriculum.update');
+        Route::delete('/curriculum/{row}', [CurriculumController::class, 'destroy'])->name('curriculum.destroy');
+    });
+
+    // Exam management — exams, result rules, grading scales, subject parts and marks
+    Route::middleware('can:exams.manage')->group(function () {
+        Route::get('/exams', [ExamController::class, 'index'])->name('exams.index');
+        Route::post('/exams', [ExamController::class, 'store'])->name('exams.store');
+        Route::post('/exam-policy', [ExamController::class, 'savePolicy'])->name('exams.policy');
+        Route::put('/exams/{exam}', [ExamController::class, 'update'])->name('exams.update');
+        Route::delete('/exams/{exam}', [ExamController::class, 'destroy'])->name('exams.destroy');
+        Route::post('/exams/{exam}/status', [ExamController::class, 'setStatus'])->name('exams.status');
+
+        Route::get('/exams/{exam}/setup', [ExamSetupController::class, 'show'])->name('exams.setup');
+        Route::post('/exams/{exam}/setup/subject', [ExamSetupController::class, 'saveSubject'])->name('exams.setup.subject');
+        Route::post('/exams/{exam}/setup/apply', [ExamSetupController::class, 'applyToClasses'])->name('exams.setup.apply');
+        Route::post('/exams/{exam}/setup/fill', [ExamSetupController::class, 'fillClass'])->name('exams.setup.fill');
+        Route::post('/exams/{exam}/setup/copy', [ExamSetupController::class, 'copyFromExam'])->name('exams.setup.copy');
+
+        Route::post('/grading-scales', [ExamSettingsController::class, 'storeScale'])->name('grading-scales.store');
+        Route::put('/grading-scales/{scale}', [ExamSettingsController::class, 'updateScale'])->name('grading-scales.update');
+        Route::post('/grading-scales/{scale}/default', [ExamSettingsController::class, 'makeDefaultScale'])->name('grading-scales.default');
+        Route::delete('/grading-scales/{scale}', [ExamSettingsController::class, 'destroyScale'])->name('grading-scales.destroy');
+
+        Route::post('/exam-component-types', [ExamSettingsController::class, 'storeType'])->name('exam-types.store');
+        Route::put('/exam-component-types/{type}', [ExamSettingsController::class, 'updateType'])->name('exam-types.update');
+        Route::delete('/exam-component-types/{type}', [ExamSettingsController::class, 'destroyType'])->name('exam-types.destroy');
+    });
+
+    // Roles & permissions
+    Route::middleware('can:roles.manage')->group(function () {
+        Route::get('/roles', [RoleController::class, 'index'])->name('roles.index');
+        Route::post('/roles', [RoleController::class, 'store'])->name('roles.store');
+        Route::put('/roles/{role}', [RoleController::class, 'update'])->name('roles.update');
+        Route::delete('/roles/{role}', [RoleController::class, 'destroy'])->name('roles.destroy');
+    });
+
+    // Website management
+    Route::prefix('website-management')->name('website-management.')->middleware('can:website.manage')->group(function () {
+        Route::get('/settings', [WebsiteSettingsController::class, 'edit'])->name('settings');
+        Route::post('/settings', [WebsiteSettingsController::class, 'update'])->name('settings.update');
+
+        Route::get('/home-page', [WebsiteHeroController::class, 'edit'])->name('home-page');
+        Route::post('/home-page', [WebsiteHeroController::class, 'update'])->name('home-page.update');
+
+        Route::get('/about-school', [WebsiteAboutController::class, 'edit'])->name('about-school');
+        Route::post('/about-school', [WebsiteAboutController::class, 'update'])->name('about-school.update');
+
+        Route::get('/events', [WebsiteEventController::class, 'index'])->name('events');
+        Route::post('/events', [WebsiteEventController::class, 'store'])->name('events.store');
+        Route::post('/events/{event}', [WebsiteEventController::class, 'update'])->name('events.update');
+        Route::delete('/events/{event}', [WebsiteEventController::class, 'destroy'])->name('events.destroy');
+
+        Route::get('/contact-info', [WebsiteContactController::class, 'edit'])->name('contact-info');
+        Route::post('/contact-info', [WebsiteContactController::class, 'update'])->name('contact-info.update');
+
+        Route::get('/messages', [ContactMessageController::class, 'index'])->name('messages');
+        Route::post('/messages/{message}/read', [ContactMessageController::class, 'markRead'])->name('messages.mark-read');
+        Route::post('/messages/{message}/unread', [ContactMessageController::class, 'markUnread'])->name('messages.mark-unread');
+        Route::post('/messages/{message}/reply', [ContactMessageController::class, 'reply'])->name('messages.reply');
+        Route::delete('/messages/{message}', [ContactMessageController::class, 'destroy'])->name('messages.destroy');
+
+        Route::get('/notices', [NoticeController::class, 'index'])->name('notices');
+        Route::post('/notices', [NoticeController::class, 'store'])->name('notices.store');
+        Route::post('/notices/{notice}', [NoticeController::class, 'update'])->name('notices.update');
+        Route::delete('/notices/{notice}', [NoticeController::class, 'destroy'])->name('notices.destroy');
+        Route::post('/notices/{notice}/toggle-featured', [NoticeController::class, 'toggleFeatured'])->name('notices.toggle-featured');
+
+        Route::get('/teachers-staff', [TeacherController::class, 'index'])->name('teachers-staff');
+        Route::post('/teachers-staff', [TeacherController::class, 'store'])->name('teachers-staff.store');
+        Route::post('/teachers-staff/{teacher}', [TeacherController::class, 'update'])->name('teachers-staff.update');
+        Route::delete('/teachers-staff/{teacher}', [TeacherController::class, 'destroy'])->name('teachers-staff.destroy');
+
+        Route::inertia('/gallery', 'WebsiteManagement/Gallery')->name('gallery');
+    });
+
+    // Events (staff view)
+    Route::get('/events', [WebsiteEventController::class, 'index'])->middleware('can:website.manage')->name('website.events.index');
+
+    // Gallery
+    Route::middleware('can:gallery.manage')->group(function () {
+        Route::get('/gallery', [GalleryController::class, 'index'])->name('galleries.index');
+        Route::post('/gallery', [GalleryController::class, 'store'])->name('galleries.store');
+        Route::put('/gallery/{gallery}', [GalleryController::class, 'update'])->name('galleries.update');
+        Route::delete('/gallery/{gallery}', [GalleryController::class, 'destroy'])->name('galleries.destroy');
+    });
+
+    // ========================================================
+    // CLASSES
+    // ========================================================
+    Route::middleware('can:classes.manage')->group(function () {
+        Route::get('/class-settings', [ClassSettingsController::class, 'index'])->name('class-settings.index');
+        Route::post('/class-settings/{kind}', [ClassSettingsController::class, 'store'])->whereIn('kind', ['shifts', 'mediums'])->name('class-settings.store');
+        Route::put('/class-settings/{kind}/{id}', [ClassSettingsController::class, 'update'])->whereIn('kind', ['shifts', 'mediums'])->name('class-settings.update');
+        Route::delete('/class-settings/{kind}/{id}', [ClassSettingsController::class, 'destroy'])->whereIn('kind', ['shifts', 'mediums'])->name('class-settings.destroy');
+        Route::get('/classes/create', [SchoolClassController::class, 'create'])->name('classes.create');
+        Route::post('/classes', [SchoolClassController::class, 'store'])->name('classes.store');
+        Route::get('/classes/{class}/edit', [SchoolClassController::class, 'edit'])->name('classes.edit');
+        Route::put('/classes/{class}', [SchoolClassController::class, 'update'])->name('classes.update');
+        Route::delete('/classes/{class}', [SchoolClassController::class, 'destroy'])->name('classes.destroy');
+
+        Route::post('/classesmanagement', [ClassesmanagementController::class, 'store'])->name('classesmanagement.store');
+        Route::put('/classesmanagement/{class}', [ClassesmanagementController::class, 'update'])->name('classesmanagement.update');
+        Route::delete('/classesmanagement/{class}', [ClassesmanagementController::class, 'destroy'])->name('classesmanagement.destroy');
+
+        // Subject teachers (who teaches what, per class and year)
+        Route::get('/subject-teachers', [SubjectTeacherController::class, 'index'])->name('subject-teachers.index');
+        Route::post('/subject-teachers', [SubjectTeacherController::class, 'assign'])->name('subject-teachers.assign');
+        Route::get('/subject-teachers/{class}/history', [SubjectTeacherController::class, 'history'])->name('subject-teachers.history');
+    });
+
+    Route::middleware('can:classes.view')->group(function () {
+        Route::get('/classes', [SchoolClassController::class, 'index'])->name('classes.index');
+        Route::get('/classes/{class}', [SchoolClassController::class, 'show'])->name('classes.show');
+        Route::get('/classesmanagement', [ClassesmanagementController::class, 'index'])->name('classesmanagement.index');
+    });
+
+    // ========================================================
+    // ATTENDANCE
+    // ========================================================
+    Route::post('/attendance/store', [AttendanceController::class, 'store'])->middleware('can:attendance.take')->name('attendance.store');
+
+    Route::middleware('can:attendance.view')->group(function () {
+        Route::get('/attendance', [AttendanceController::class, 'index'])->name('attendance.index');
+        Route::get('/attendance/class/{classId}', [AttendanceController::class, 'show'])->name('attendance.show');
+        Route::get('/attendance/{class}/records', [AttendanceController::class, 'records'])->name('attendance.records');
+    });
+
+    // ========================================================
+    // RESULTS
+    // ========================================================
+    Route::middleware('can:results.view')->group(function () {
+        Route::get('/results', [ResultInputController::class, 'index'])->name('results.index');
+        Route::get('/results/class/{classId}', [ResultInputController::class, 'show'])->name('results.show');
+    });
+
+    Route::middleware('can:results.compile')->group(function () {
+        Route::get('/student-results', [StudentResultController::class, 'index'])->name('student.results');
+        Route::get('/tabulation/class/{class}', [TabulationController::class, 'show'])->name('tabulation.show');
+        Route::get('/reports/marksheet/student/{student}', [ReportController::class, 'marksheet'])->name('reports.marksheet.student');
+        Route::get('/reports/marksheet/class/{class}', [ReportController::class, 'classMarksheets'])->name('reports.marksheet.class');
+        Route::get('/reports/summary/class/{class}', [ReportController::class, 'classSummary'])->name('reports.summary.class');
+        Route::get('/reports/class-wise', [ReportController::class, 'classWise'])->name('reports.class-wise');
+        Route::get('/student-results/class/{classId}', [StudentResultController::class, 'show'])->name('student.results.show');
+    });
+
+    Route::post('/results/class/{classId}', [ResultInputController::class, 'store'])->middleware('can:results.enter')->name('results.store');
+
+    Route::post('/results/class/{classId}/lock', [ResultInputController::class, 'lock'])->middleware('can:results.lock')->name('results.lock');
+    Route::post('/results/class/{classId}/unlock', [ResultInputController::class, 'unlock'])->middleware('can:results.unlock')->name('results.unlock');
+
+    // ========================================================
+    // YEARLY PROMOTION (shift students to next year)
+    // ========================================================
+    Route::middleware('can:promotion.run')->group(function () {
+        Route::post('/student-results/shift', [StudentResultController::class, 'shift'])->name('student.results.shift');
+        Route::get('/student-results/shift-status', [StudentResultController::class, 'shiftStatus'])->name('student.results.shift-status');
+        Route::delete('/student-results/reset-shift/{recordId}', [StudentResultController::class, 'resetShift'])->name('student.results.reset-shift');
+    });
+
+    // ========================================================
+    // ROUTINE (class timetables)
+    // ========================================================
+    Route::prefix('routine')->name('routine.')->group(function () {
+        Route::get('/', [RoutineController::class, 'index'])->name('index');
+        Route::get('/periods', [RoutineController::class, 'periods'])->name('periods');
+        Route::put('/periods', [RoutineController::class, 'savePeriods'])->name('periods.save');
+        Route::delete('/periods/shifts/{shift}', [RoutineController::class, 'resetPeriods'])->whereNumber('shift')->name('periods.reset');
+        Route::put('/days', [RoutineController::class, 'saveDays'])->name('days.save');
+        Route::get('/teachers', [RoutineController::class, 'teachers'])->name('teachers');
+        Route::get('/teachers/{teacher}/print', [RoutineController::class, 'printTeacher'])->whereNumber('teacher')->name('teachers.print');
+
+        Route::get('/classes/{class}', [RoutineController::class, 'editor'])->whereNumber('class')->name('editor');
+        Route::get('/classes/{class}/print', [RoutineController::class, 'print'])->whereNumber('class')->name('print');
+        Route::put('/classes/{class}/cell', [RoutineController::class, 'cell'])->whereNumber('class')->middleware('throttle:240,1')->name('cell');
+        Route::post('/classes/{class}/copy-day', [RoutineController::class, 'copyDay'])->whereNumber('class')->name('copy-day');
+        Route::post('/classes/{class}/copy-from', [RoutineController::class, 'copyFrom'])->whereNumber('class')->name('copy-from');
+        Route::delete('/classes/{class}/cells', [RoutineController::class, 'clear'])->whereNumber('class')->name('clear');
+        Route::put('/classes/{class}/periods', [RoutineController::class, 'saveClassPeriods'])->whereNumber('class')->name('class-periods.save');
+        Route::delete('/classes/{class}/periods', [RoutineController::class, 'resetClassPeriods'])->whereNumber('class')->name('class-periods.reset');
+        Route::put('/classes/{class}/plan', [RoutineController::class, 'savePlan'])->whereNumber('class')->name('plan.save');
+        Route::post('/classes/{class}/auto', [RoutineController::class, 'autoPreview'])->whereNumber('class')->middleware('throttle:60,1')->name('auto.preview');
+        Route::post('/classes/{class}/auto/apply', [RoutineController::class, 'autoApply'])->whereNumber('class')->middleware('throttle:30,1')->name('auto.apply');
+        Route::get('/generate', [RoutineController::class, 'generatePage'])->name('generate');
+        Route::post('/generate/preview', [RoutineController::class, 'generatePreview'])->middleware('throttle:20,1')->name('generate.preview');
+        Route::post('/generate/apply', [RoutineController::class, 'generateApply'])->middleware('throttle:10,1')->name('generate.apply');
+        Route::post('/classes/{class}/publish', [RoutineController::class, 'publish'])->whereNumber('class')->name('publish');
+        Route::delete('/classes/{class}/publish', [RoutineController::class, 'unpublish'])->whereNumber('class')->name('unpublish');
+    });
+
+    // ========================================================
+    // STUDENTS
+    // ========================================================
+    Route::middleware('can:students.create')->group(function () {
+        Route::get('/students/create', fn () => redirect()->route('sm.students.create'))->name('students.create');
+        Route::get('/students/generate-id', [StudentController::class, 'generateId'])->name('students.generate-id');
+        Route::post('/students', [StudentController::class, 'store'])->name('students.store');
+    });
+
+    Route::middleware('can:students.view')->group(function () {
+        Route::get('/students', fn () => redirect()->route('sm.students.index'))->name('students.index');
+        Route::get('/students/{student}', fn (\App\Models\Student $student) => redirect()->route('sm.students.show', $student->profile_id))->whereNumber('student')->name('students.show');
+        Route::get('/studentmanagement', fn () => redirect()->route('sm.students.index'))->name('studentmanagement');
+    });
+
+    Route::middleware('can:students.edit')->group(function () {
+        Route::get('/students/{student}/edit', fn (\App\Models\Student $student) => redirect()->route('sm.students.edit', $student->profile_id))->whereNumber('student')->name('students.edit');
+        Route::put('/students/{student}', [StudentController::class, 'update'])->name('students.update');
+        Route::put('/studentmanagement/{student}', [StudentManagementController::class, 'update'])->name('studentmanagement.update');
+        Route::post('/studentmanagement/{student}', [StudentManagementController::class, 'update'])->name('studentmanagement.update.post');
+        Route::post('/students/{student}/status', [StudentStatusController::class, 'update'])->name('students.status');
+    });
+
+    Route::middleware('can:students.delete')->group(function () {
+        Route::delete('/students/{student}', [StudentController::class, 'destroy'])->name('students.destroy');
+        Route::delete('/studentmanagement/{student}', [StudentManagementController::class, 'destroy'])->name('studentmanagement.destroy');
+    });
+
+    // ========================================================
+    // STUDENT MODULE  (/student-module/…)
+    // Every sensitive rule is enforced in App\Services\StudentRegistry and by the can: permission of each route.
+    // ========================================================
+    Route::prefix('student-module')->name('sm.')->group(function () {
+        // the two entry forms (declared before /students/{profile} so "create" and "quick" are not read as ids)
+        Route::middleware('can:students.create')->group(function () {
+            Route::get('/students/create', [StudentModuleController::class, 'create'])->name('students.create');
+            Route::post('/students', [StudentModuleController::class, 'store'])->name('students.store');
+            Route::get('/students/quick', [StudentModuleController::class, 'quick'])->name('students.quick');
+            Route::post('/students/quick', [StudentModuleController::class, 'quickStore'])->name('students.quick.store');
+        });
+
+        Route::middleware('can:students.view')->group(function () {
+            Route::get('/students', [StudentModuleController::class, 'index'])->name('students.index');
+            Route::get('/students/{profile}', [StudentModuleController::class, 'show'])->whereNumber('profile')->name('students.show');
+        });
+
+        Route::middleware('can:students.edit')->group(function () {
+            Route::get('/students/{profile}/edit', [StudentModuleController::class, 'edit'])->whereNumber('profile')->name('students.edit');
+            Route::put('/students/{profile}', [StudentModuleController::class, 'update'])->whereNumber('profile')->name('students.update');
+        });
+
+        Route::delete('/students/{profile}', [StudentModuleController::class, 'destroy'])->whereNumber('profile')->middleware('can:students.delete')->name('students.destroy');
+
+        // finished exports: the status page and the file
+        Route::get('/exports/{task}', [TaskController::class, 'export'])->whereNumber('task')->name('exports.show');
+        Route::get('/tasks/{task}/download', [TaskController::class, 'download'])->whereNumber('task')->name('tasks.download');
+
+        // admission payments, receipts, dues
+        Route::middleware('can:students.admission_payments')->prefix('admission-payments')->name('admission-payments.')->group(function () {
+            Route::get('/', [AdmissionPaymentController::class, 'index'])->name('index');
+            Route::get('/find', [AdmissionPaymentController::class, 'find'])->name('find');
+            Route::get('/export', [AdmissionPaymentController::class, 'export'])->name('export');
+            Route::post('/fees', [AdmissionPaymentController::class, 'saveFees'])->name('fees');
+            Route::post('/', [AdmissionPaymentController::class, 'store'])->middleware('throttle:60,1')->name('store');
+            Route::post('/{payment}/void', [AdmissionPaymentController::class, 'void'])->whereNumber('payment')->name('void');
+            Route::get('/{payment}/receipt', [AdmissionPaymentController::class, 'receipt'])->whereNumber('payment')->name('receipt');
+        });
+
+        // certificate register (issuing needs its own permission, checked in the controller)
+        Route::middleware('can:students.view_certificates')->prefix('certificates')->name('certificates.')->group(function () {
+            Route::get('/', [CertificateController::class, 'index'])->name('index');
+            Route::post('/', [CertificateController::class, 'store'])->name('store');
+            Route::post('/{certificate}/void', [CertificateController::class, 'void'])->whereNumber('certificate')->name('void');
+            Route::get('/{certificate}/print', [CertificateController::class, 'print'])->whereNumber('certificate')->name('print');
+        });
+
+        // transfers: each step's permission is enforced in TransferService
+        Route::prefix('transfers')->name('transfers.')->group(function () {
+            Route::get('/', [TransferController::class, 'index'])->name('index');
+            Route::post('/', [TransferController::class, 'store'])->name('store');
+            Route::post('/{transfer}/recheck', [TransferController::class, 'recheck'])->whereNumber('transfer')->name('recheck');
+            Route::post('/{transfer}/approve', [TransferController::class, 'approve'])->whereNumber('transfer')->name('approve');
+            Route::post('/{transfer}/reject', [TransferController::class, 'reject'])->whereNumber('transfer')->name('reject');
+            Route::post('/{transfer}/cancel', [TransferController::class, 'cancel'])->whereNumber('transfer')->name('cancel');
+        });
+        Route::post('/students/{profile}/reinstate', [TransferController::class, 'reinstate'])->whereNumber('profile')->name('students.reinstate');
+
+        // student subjects (class-scoped permission checked in the service)
+        Route::get('/subjects', [StudentSubjectController::class, 'index'])->name('subjects.index');
+        Route::put('/subjects/students/{student}', [StudentSubjectController::class, 'update'])->whereNumber('student')->name('subjects.update');
+        Route::post('/subjects/classes/{class}/bulk', [StudentSubjectController::class, 'bulk'])->whereNumber('class')->name('subjects.bulk');
+
+        // student report and statistics
+        Route::middleware('can:students.reports')->group(function () {
+            Route::get('/reports', [StudentReportController::class, 'index'])->name('reports.index');
+            Route::get('/reports/print', [StudentReportController::class, 'print'])->name('reports.print');
+            Route::get('/reports/export', [StudentReportController::class, 'export'])->middleware('throttle:20,1')->name('reports.export');
+            Route::get('/statistics', [StudentReportController::class, 'statistics'])->name('statistics.index');
+            Route::get('/statistics/print', [StudentReportController::class, 'statisticsPrint'])->name('statistics.print');
+        });
+
+        // online applications
+        Route::middleware('can:students.online_admission')->prefix('online-admissions')->name('online-admissions.')->group(function () {
+            Route::get('/', [OnlineAdmissionController::class, 'index'])->name('index');
+            Route::post('/{application}/approve', [OnlineAdmissionController::class, 'approve'])->whereNumber('application')->name('approve');
+            Route::post('/{application}/reject', [OnlineAdmissionController::class, 'reject'])->whereNumber('application')->name('reject');
+        });
+
+        // promotion to the next session: automatic (preview, then confirm) and manual (student by student)
+        Route::middleware('can:students.promote_students')->prefix('promotion')->name('promotion.')->group(function () {
+            Route::get('/auto', [PromotionController::class, 'auto'])->name('auto');
+            Route::post('/auto/prepare', [PromotionController::class, 'prepare'])->name('prepare');
+            Route::post('/auto', [PromotionController::class, 'run'])->name('run');
+            Route::get('/manual', [PromotionController::class, 'manual'])->name('manual');
+            Route::post('/manual', [PromotionController::class, 'applyManual'])->name('manual.apply');
+        });
+
+        // import from Excel / CSV: upload → preview → confirm. Needs its own permission; the upload is rate-limited
+        Route::middleware('can:students.import_students')->prefix('import')->name('import.')->group(function () {
+            Route::get('/', [ImportController::class, 'index'])->name('index');
+            Route::get('/template', [ImportController::class, 'template'])->name('template');
+            Route::post('/', [ImportController::class, 'upload'])->middleware('throttle:10,1')->name('upload');
+            Route::get('/{import}', [ImportController::class, 'show'])->whereNumber('import')->name('show');
+            Route::post('/{import}/confirm', [ImportController::class, 'confirm'])->whereNumber('import')->name('confirm');
+            Route::post('/{import}/cancel', [ImportController::class, 'cancel'])->whereNumber('import')->name('cancel');
+            Route::get('/{import}/report', [ImportController::class, 'report'])->whereNumber('import')->name('report');
+        });
+
+        // photos (single and bulk); the upload routes are rate-limited
+        Route::middleware('can:students.manage_images')->group(function () {
+            Route::get('/images', [PhotoController::class, 'index'])->name('images.index');
+            Route::get('/images/find', [PhotoController::class, 'find'])->name('images.find');
+            Route::post('/images/bulk', [PhotoController::class, 'storeBulk'])->middleware('throttle:20,1')->name('images.bulk');
+            Route::post('/images/{profile}', [PhotoController::class, 'storeOne'])->whereNumber('profile')->middleware('throttle:60,1')->name('images.store');
+        });
+
+        // progress and the report of a background task (only its owner, or someone who manages users, may read it)
+        Route::get('/tasks/{task}', [TaskController::class, 'show'])->name('tasks.show');
+        Route::get('/tasks/{task}/report', [TaskController::class, 'report'])->name('tasks.report');
+
+        // change requests: who may see the page and who may decide is checked in the controller / service
+        Route::get('/change-requests', [ChangeRequestController::class, 'index'])->name('change-requests.index');
+        Route::post('/change-requests/{changeRequest}/approve', [ChangeRequestController::class, 'approve'])->name('change-requests.approve');
+        Route::post('/change-requests/{changeRequest}/reject', [ChangeRequestController::class, 'reject'])->name('change-requests.reject');
+    });
+
+    // ========================================================
+    // FEES & FINANCE
+    // ========================================================
+    Route::middleware('can:fees.manage_structures')->group(function () {
+        Route::get('/fees/create', [FeeController::class, 'create'])->name('fees.create');
+        Route::post('/fees/create', [FeeController::class, 'store'])->name('fees.create.store');
+        Route::delete('/fees/destroy-group', [FeeController::class, 'destroyGroup'])->name('fees.destroy-group');
+    });
+
+    Route::middleware('can:fees.view')->group(function () {
+        Route::get('/fees', [CollectFeesController::class, 'index'])->name('fees.index');
+        Route::get('/fees/class/{classId}', [CollectFeesController::class, 'show'])->name('fees.show');
+    });
+
+    Route::post('/fees/policy/save', [CollectFeesController::class, 'savePolicy'])->middleware('can:fees.discount')->name('fees.policy.save');
+    Route::post('/fees/collect-payment', [CollectFeesController::class, 'collectPayment'])->middleware('can:fees.collect')->name('fees.collect.payment');
 });
 
-
 // ============================================================
-// ✅ STAFF ROUTES (Admin + Teacher) — Inline Check
+// ANY LOGGED-IN USER
 // ============================================================
-Route::middleware(['auth', 'verified'])->group(function () {
-
-    // Classes
-    Route::get('/classes', function () {
-        if ($r = checkStaff()) return $r;
-        return app(SchoolClassController::class)->index(request());
-    })->name('classes.index');
-
-    Route::get('/classes/create', function () {
-        if ($r = checkStaff()) return $r;
-        return app(SchoolClassController::class)->create(request());
-    })->name('classes.create');
-
-    Route::post('/classes', function () {
-        if ($r = checkStaff()) return $r;
-        return app(SchoolClassController::class)->store(request());
-    })->name('classes.store');
-
-    Route::get('/classes/{class}', function ($class) {
-        if ($r = checkStaff()) return $r;
-        return app(SchoolClassController::class)->show(request(), $class);
-    })->name('classes.show');
-
-    Route::get('/classes/{class}/edit', function ($class) {
-        if ($r = checkStaff()) return $r;
-        return app(SchoolClassController::class)->edit(request(), $class);
-    })->name('classes.edit');
-
-    Route::put('/classes/{class}', function ($class) {
-        if ($r = checkStaff()) return $r;
-        return app(SchoolClassController::class)->update(request(), $class);
-    })->name('classes.update');
-
-    Route::delete('/classes/{class}', function ($class) {
-        if ($r = checkStaff()) return $r;
-        return app(SchoolClassController::class)->destroy(request(), $class);
-    })->name('classes.destroy');
-
-    // Classes Management
-    Route::get('/classesmanagement', function () {
-        if ($r = checkStaff()) return $r;
-        return app(ClassesmanagementController::class)->index(request());
-    })->name('classesmanagement.index');
-
-    Route::get('/classesmanagement/create', function () {
-        if ($r = checkStaff()) return $r;
-        return app(ClassesmanagementController::class)->create(request());
-    })->name('classesmanagement.create');
-
-    Route::post('/classesmanagement', function () {
-        if ($r = checkStaff()) return $r;
-        return app(ClassesmanagementController::class)->store(request());
-    })->name('classesmanagement.store');
-
-    Route::get('/classesmanagement/{class}', function ($class) {
-        if ($r = checkStaff()) return $r;
-        return app(ClassesmanagementController::class)->show(request(), $class);
-    })->name('classesmanagement.show');
-
-    Route::get('/classesmanagement/{class}/edit', function ($class) {
-        if ($r = checkStaff()) return $r;
-        return app(ClassesmanagementController::class)->edit(request(), $class);
-    })->name('classesmanagement.edit');
-
-    Route::put('/classesmanagement/{class}', function ($class) {
-        if ($r = checkStaff()) return $r;
-        return app(ClassesmanagementController::class)->update(request(), $class);
-    })->name('classesmanagement.update');
-
-    Route::delete('/classesmanagement/{class}', function ($class) {
-        if ($r = checkStaff()) return $r;
-        return app(ClassesmanagementController::class)->destroy(request(), $class);
-    })->name('classesmanagement.destroy');
-
-    // Events (authenticated staff view)
-    Route::get('/events', function () {
-        if ($r = checkStaff()) return $r;
-        return app(WebsiteEventController::class)->index(request());
-    })->name('website.events.index');
-
-    // Attendance
-    Route::get('/attendance', function () {
-        if ($r = checkStaff()) return $r;
-        return app(AttendanceController::class)->index(request());
-    })->name('attendance.index');
-
-    Route::get('/attendance/class/{classId}', function ($classId) {
-        if ($r = checkStaff()) return $r;
-        return app(AttendanceController::class)->show(request(), $classId);
-    })->name('attendance.show');
-
-    Route::post('/attendance/store', function () {
-        if ($r = checkStaff()) return $r;
-        return app(AttendanceController::class)->store(request());
-    })->name('attendance.store');
-    Route::get('attendance/{class}/records', [AttendanceController::class, 'records'])
-    ->name('attendance.records');
-
-    // Exams
-    Route::get('/exams', function () {
-        if ($r = checkStaff()) return $r;
-        return Inertia::render('exams');
-    })->name('exams');
-
-    // ✅ Results — ResultInputController
-    Route::get('/results', function () {
-        if ($r = checkStaff()) return $r;
-        return app(ResultInputController::class)->index(request());
-    })->name('results.index');
-
-    Route::get('/results/class/{classId}', function ($classId) {
-        if ($r = checkStaff()) return $r;
-        return app(ResultInputController::class)->show(request(), $classId);
-    })->name('results.show');
-
-    Route::post('/results/class/{classId}', function ($classId) {
-        if ($r = checkStaff()) return $r;
-        return app(ResultInputController::class)->store(request(), $classId);
-    })->name('results.store');
-
-    Route::post('/results/class/{classId}/lock', function ($classId) {
-        if ($r = checkStaff()) return $r;
-        return app(ResultInputController::class)->lock(request(), $classId);
-    })->name('results.lock');
-
-    Route::post('/results/class/{classId}/unlock', function ($classId) {
-        if ($r = checkStaff()) return $r;
-        return app(ResultInputController::class)->unlock(request(), $classId);
-    })->name('results.unlock');
-
-    // Student Results
-    Route::get('/student-results', function () {
-        if ($r = checkStaff()) return $r;
-        return app(StudentResultController::class)->index(request());
-    })->name('student.results');
-
-    Route::get('/student-results/class/{classId}', function ($classId) {
-        if ($r = checkStaff()) return $r;
-        return app(StudentResultController::class)->show(request(), $classId);
-    })->name('student.results.show');
-
-
-        // ⭐ Student Results — Shift to Next Class
-    Route::post('/student-results/shift', function (\Illuminate\Http\Request $request) {
-        if ($r = checkStaff()) return $r;
-        return app(StudentResultController::class)->shift($request);
-    })->name('student.results.shift');
-
-    Route::get('/student-results/shift-status', function () {
-        if ($r = checkStaff()) return $r;
-        return response()->json(
-            \Illuminate\Support\Facades\Cache::get('shift_result_' . auth()->id(), ['done' => true])
-        );
-    })->name('student.results.shift-status');
-
-    Route::delete('/student-results/reset-shift/{recordId}', function ($recordId) {
-        if ($r = checkStaff()) return $r;
-        return app(StudentResultController::class)->resetShift(request(), $recordId);
-    })->name('student.results.reset-shift');
-
-    // Students
-    Route::get('/students', function () {
-        if ($r = checkStaff()) return $r;
-        return app(StudentController::class)->index(request());
-    })->name('students.index');
-
-    Route::get('/students/create', function () {
-        if ($r = checkStaff()) return $r;
-        return app(StudentController::class)->create(request());
-    })->name('students.create');
-
-    Route::get('/students/generate-id', function () {
-        if ($r = checkStaff()) return $r;
-        return app(StudentController::class)->generateId(request());
-    })->name('students.generate-id');
-
-    Route::post('/students', function () {
-        if ($r = checkStaff()) return $r;
-        return app(StudentController::class)->store(request());
-    })->name('students.store');
-
-    Route::get('/students/{student}', function ($student) {
-        if ($r = checkStaff()) return $r;
-        return app(StudentController::class)->show(request(), $student);
-    })->name('students.show');
-
-    Route::get('/students/{student}/edit', function ($student) {
-        if ($r = checkStaff()) return $r;
-        return app(StudentController::class)->edit(request(), $student);
-    })->name('students.edit');
-
-    Route::put('/students/{student}', function ($student) {
-        if ($r = checkStaff()) return $r;
-        return app(StudentController::class)->update(request(), $student);
-    })->name('students.update');
-
-    Route::delete('/students/{student}', function ($student) {
-        if ($r = checkStaff()) return $r;
-        return app(StudentController::class)->destroy(request(), $student);
-    })->name('students.destroy');
-
-    // Student Management
-    Route::get('/studentmanagement', function () {
-        if ($r = checkStaff()) return $r;
-        return app(StudentManagementController::class)->index(request());
-    })->name('studentmanagement');
-
-    Route::put('/studentmanagement/{student}', function (\App\Models\Student $student) {
-        if ($r = checkStaff()) return $r;
-        return app(StudentManagementController::class)->update(request(), $student);
-    })->name('studentmanagement.update');
-
-    Route::post('/studentmanagement/{student}', function (\App\Models\Student $student) {
-        if ($r = checkStaff()) return $r;
-        return app(StudentManagementController::class)->update(request(), $student);
-    })->name('studentmanagement.update.post');
-
-    Route::delete('/studentmanagement/{student}', function ($student) {
-        if ($r = checkStaff()) return $r;
-        return app(StudentManagementController::class)->destroy(request(), $student);
-    })->name('studentmanagement.destroy');
-
-    // Fees
-    Route::get('/fees', function () {
-        if ($r = checkStaff()) return $r;
-        return app(CollectFeesController::class)->index(request());
-    })->name('fees.index');
-
-    Route::get('/fees/class/{classId}', function ($classId) {
-        if ($r = checkStaff()) return $r;
-        return app(CollectFeesController::class)->show(request(), $classId);
-    })->name('fees.show');
-
-    Route::post('/fees/policy/save', function () {
-        if ($r = checkStaff()) return $r;
-        return app(CollectFeesController::class)->savePolicy(request());
-    })->name('fees.policy.save');
-
-    Route::post('/fees/collect-payment', function () {
-        if ($r = checkStaff()) return $r;
-        return app(CollectFeesController::class)->collectPayment(request());
-    })->name('fees.collect.payment');
-
-    Route::get('/fees/create', function () {
-        if ($r = checkStaff()) return $r;
-        return app(FeeController::class)->create(request());
-    })->name('fees.create');
-
-    Route::post('/fees/create', function () {
-        if ($r = checkStaff()) return $r;
-        return app(FeeController::class)->store(request());
-    })->name('fees.create.store');
-});
-
-
-// ============================================================
-// PROFILE ROUTES
-// ============================================================
-Route::middleware('auth')->group(function () {
+Route::middleware(['auth', 'active'])->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
-});
-
-//Gallery Routes — ✅ Admin only
-Route::middleware(['auth'])->group(function () {
-    // ... apnar existing routes ...
-
-    Route::get('/gallery', function () {
-        if ($r = checkAdmin()) return $r;
-        return app(GalleryController::class)->index(request());
-    })->name('galleries.index');
-
-    Route::post('/gallery', function () {
-        if ($r = checkAdmin()) return $r;
-        return app(GalleryController::class)->store(request());
-    })->name('galleries.store');
-
-    Route::put('/gallery/{gallery}', function ($gallery) {
-        if ($r = checkAdmin()) return $r;
-        return app(GalleryController::class)->update(request(), $gallery);
-    })->name('galleries.update');
-
-    Route::delete('/gallery/{gallery}', function ($gallery) {
-        if ($r = checkAdmin()) return $r;
-        return app(GalleryController::class)->destroy(request(), $gallery);
-    })->name('galleries.destroy');
 });
 
 require __DIR__.'/auth.php';

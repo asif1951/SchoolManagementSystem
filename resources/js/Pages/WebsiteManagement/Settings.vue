@@ -37,6 +37,7 @@ const form = useForm({
     short_description:  original.short_description,
     school_logo:        null,
     favicon:            null,
+    print_color:        props.settings?.print_color || '#1f3a5f',
 
     // Contact Details
     phone:              original.phone,
@@ -172,8 +173,10 @@ const submit = () => {
         onSuccess: () => {
             showToast('Website settings saved successfully! ✅', 'success');
         },
-        onError: () => {
-            showToast('Please fix the errors and try again.', 'error');
+        onError: (errors) => {
+            // say what is wrong, e.g. "School name field is required" — not just "fix the errors"
+            const first = Object.values(errors || {})[0];
+            showToast(first ? `Not saved — ${first}` : 'Please fix the errors and try again.', 'error');
         },
     });
 };
@@ -324,6 +327,20 @@ const submit = () => {
                                 </div>
                             </div>
 
+                            <!-- Colour of the border on printed documents -->
+                            <div>
+                                <label class="mb-2 block text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200">
+                                    Printed documents — border colour
+                                </label>
+                                <div class="flex items-center gap-3">
+                                    <input v-model="form.print_color" type="color" class="h-11 w-16 cursor-pointer rounded-lg border border-slate-200 bg-white p-1 dark:border-slate-700 dark:bg-slate-800" />
+                                    <span class="font-mono text-sm text-slate-600 dark:text-slate-300">{{ form.print_color }}</span>
+                                    <button type="button" class="text-xs font-semibold text-blue-600 hover:underline dark:text-blue-400" @click="form.print_color = '#1f3a5f'">Reset</button>
+                                </div>
+                                <p class="mt-1.5 text-[11px] text-slate-400">Drawn as a double-line frame around every page of the tabulation sheet, marksheets and result summaries.</p>
+                                <p v-if="form.errors.print_color" class="mt-1 text-xs text-red-500">{{ form.errors.print_color }}</p>
+                            </div>
+
                             <!-- Short Description -->
                             <div class="lg:col-span-2">
                                 <label class="mb-2 block text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200">
@@ -362,6 +379,10 @@ const submit = () => {
                                     </div>
                                     <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" class="hidden" @change="onLogoChange" />
                                 </label>
+                                <p v-if="logoPreview && !form.errors.school_logo" class="mt-1.5 text-xs font-semibold text-amber-600 dark:text-amber-400">
+                                    Logo chosen but not saved yet — click "Save" at the bottom of the page.
+                                </p>
+                                <p v-if="form.errors.school_logo" class="mt-1.5 text-xs font-medium text-rose-500">{{ form.errors.school_logo }}</p>
                             </div>
 
                             <!-- Favicon -->

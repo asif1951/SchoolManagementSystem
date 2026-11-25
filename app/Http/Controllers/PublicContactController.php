@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Models\WebsiteContact;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
 use Route;
 
@@ -16,8 +15,6 @@ class PublicContactController extends Controller
     public function index()
     {
         $contact = Cache::remember('website_contact', 60, function () {
-            if (!Schema::hasTable('website_contacts')) return null;
-
             return WebsiteContact::first();
         });
 

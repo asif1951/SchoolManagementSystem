@@ -19,6 +19,9 @@ const props = defineProps({
     flash: { type: Object, default: () => ({}) },
     // ⭐ Shift feature
     classNames: { type: Array, default: () => [] },
+    groups: { type: Array, default: () => [] },
+    shifts: { type: Array, default: () => [] },
+    mediums: { type: Array, default: () => [] },
     classSections: { type: Object, default: () => ({}) },
     // 🆕 Class / Section filter options for the class list (from backend)
     filterClassNames: { type: Array, default: () => [] },
@@ -74,8 +77,11 @@ const showYearDropdown = ref(false)
 // ============================================================
 const filterClassName = ref(props.filters.class_name || '')
 const filterSection = ref(props.filters.section || '')
+const filterGroup = ref(props.filters.group || '')
+const filterShift = ref(props.filters.shift || '')
+const filterMedium = ref(props.filters.medium || '')
 
-const hasClassFilters = computed(() => !!(filterClassName.value || filterSection.value))
+const hasClassFilters = computed(() => !!(filterClassName.value || filterSection.value || filterGroup.value || filterShift.value || filterMedium.value))
 
 const yearSuggestions = computed(() => {
     const years = [...props.availableYears]
@@ -329,6 +335,9 @@ const handleYearChange = () => {
     // 🆕 Year change → class/section options change, so reset them
     filterClassName.value = ''
     filterSection.value = ''
+    filterGroup.value = ''
+    filterShift.value = ''
+    filterMedium.value = ''
 
     router.get(route('student.results'), {
         academic_year: selectedYear.value,
@@ -344,6 +353,9 @@ const fetchClasses = () => {
         academic_year: selectedYear.value,
         class_name: filterClassName.value || undefined,
         section: filterSection.value || undefined,
+        group: filterGroup.value || undefined,
+        shift: filterShift.value || undefined,
+        medium: filterMedium.value || undefined,
     }, {
         preserveScroll: true,
         preserveState: true,
@@ -352,6 +364,10 @@ const fetchClasses = () => {
 }
 
 // 🆕 Class changed → reset section, reload from backend
+const handleFilterGroupChange = () => {
+    fetchClasses()
+}
+
 const handleFilterClassChange = () => {
     filterSection.value = ''
     fetchClasses()
@@ -366,6 +382,9 @@ const handleFilterSectionChange = () => {
 const resetClassFilters = () => {
     filterClassName.value = ''
     filterSection.value = ''
+    filterGroup.value = ''
+    filterShift.value = ''
+    filterMedium.value = ''
     fetchClasses()
 }
 
@@ -507,6 +526,26 @@ const getClassName = (s) => s?.class_name || s?.class || '—'
 const getSection = (s) => s?.section || '—'
 const getRoll = (s) => s?.roll || s?.roll_number || '—'
 const getDob = (s) => s?.dob || s?.date_of_birth || '—'
+// ============================================================
+// Expandable subject rows (the table shows one line per student; the subject marks open on demand)
+// ============================================================
+const expandedIds = ref([])
+
+const isExpanded = (id) => expandedIds.value.includes(id)
+
+const toggleExpand = (id) => {
+    expandedIds.value = isExpanded(id)
+        ? expandedIds.value.filter(x => x !== id)
+        : [...expandedIds.value, id]
+}
+
+const expandAll = () => {
+    expandedIds.value = studentsList.value.map(s => s.id)
+}
+
+const collapseAll = () => {
+    expandedIds.value = []
+}
 </script>
 
 <template>
@@ -567,114 +606,71 @@ const getDob = (s) => s?.dob || s?.date_of_birth || '—'
             }
         </component>
 
-        <!-- ⭐ GLOBAL TOAST NOTIFICATION -->
+        <!-- Notification -->
         <Transition
-            enter-active-class="transition ease-out duration-300"
-            enter-from-class="opacity-0 -translate-y-3 scale-[0.98]"
-            enter-to-class="opacity-100 translate-y-0 scale-100"
-            leave-active-class="transition ease-in duration-200"
-            leave-from-class="opacity-100 translate-y-0 scale-100"
-            leave-to-class="opacity-0 -translate-y-3 scale-[0.98]"
+            enter-active-class="transition ease-out duration-200"
+            enter-from-class="opacity-0 -translate-y-2"
+            enter-to-class="opacity-100 translate-y-0"
+            leave-active-class="transition ease-in duration-150"
+            leave-from-class="opacity-100"
+            leave-to-class="opacity-0"
         >
-            <div
-                v-if="toast.show"
-                class="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] max-w-[90vw] sm:max-w-md w-full px-3 no-print"
-            >
+            <div v-if="toast.show" class="fixed top-4 left-1/2 z-[9999] w-full max-w-md -translate-x-1/2 px-3 no-print">
                 <div
                     :class="[
-                        'flex items-start gap-3 rounded-2xl border-2 p-3 sm:p-4 shadow-2xl backdrop-blur-md',
-                        toast.type === 'success' ? 'bg-emerald-50/95 dark:bg-emerald-950/90 border-emerald-300 dark:border-emerald-700 text-emerald-900 dark:text-emerald-200' : '',
-                        toast.type === 'error'   ? 'bg-rose-50/95 dark:bg-rose-950/90 border-rose-300 dark:border-rose-700 text-rose-900 dark:text-rose-200' : '',
-                        toast.type === 'info'    ? 'bg-blue-50/95 dark:bg-blue-950/90 border-blue-300 dark:border-blue-700 text-blue-900 dark:text-blue-200' : '',
+                        'flex items-start gap-3 rounded-md border border-l-4 bg-white p-3 text-sm shadow-lg dark:bg-slate-900',
+                        toast.type === 'success' ? 'border-slate-200 border-l-green-600 dark:border-slate-700 dark:border-l-green-500' : '',
+                        toast.type === 'error' ? 'border-slate-200 border-l-red-600 dark:border-slate-700 dark:border-l-red-500' : '',
+                        toast.type === 'info' ? 'border-slate-200 border-l-blue-600 dark:border-slate-700 dark:border-l-blue-500' : '',
                     ]"
                 >
-                    <span class="text-xl sm:text-2xl flex-shrink-0 leading-none mt-0.5">
-                        <template v-if="toast.type === 'success'">✅</template>
-                        <template v-else-if="toast.type === 'error'">❌</template>
-                        <template v-else-if="toast.type === 'info'">
-                            <svg class="w-5 h-5 sm:w-6 sm:h-6 animate-spin text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24">
-                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-                            </svg>
-                        </template>
-                    </span>
-                    <p class="text-xs sm:text-sm font-semibold flex-1 break-words leading-relaxed">
-                        {{ toast.message }}
-                    </p>
-                    <button
-                        type="button"
-                        @click="toast.show = false"
-                        class="flex-shrink-0 rounded-lg p-1 transition text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200"
-                    >
-                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12" />
-                        </svg>
+                    <svg v-if="toast.type === 'success'" class="mt-0.5 h-5 w-5 flex-shrink-0 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
+                    <svg v-else-if="toast.type === 'error'" class="mt-0.5 h-5 w-5 flex-shrink-0 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                    <svg v-else class="mt-0.5 h-5 w-5 flex-shrink-0 animate-spin text-blue-600" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                    <p class="min-w-0 flex-1 break-words text-slate-800 dark:text-slate-100">{{ toast.message }}</p>
+                    <button type="button" @click="toast.show = false" class="flex-shrink-0 rounded p-0.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200" title="Dismiss">
+                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
                     </button>
                 </div>
             </div>
         </Transition>
 
-        <div class="w-full min-h-screen bg-gradient-to-br from-emerald-50/30 via-white to-teal-50/30 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 no-print transition-colors duration-300">
-            <div class="mx-auto max-w-[1600px] px-2.5 xs:px-3 sm:px-4 md:px-6 lg:px-8 py-3 xs:py-4 sm:py-6 lg:py-8">
+        <div class="min-h-screen w-full bg-slate-50 text-slate-800 no-print dark:bg-slate-950 dark:text-slate-200">
+            <div class="mx-auto max-w-[1500px] px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
 
-                <!-- VIEW 1: CLASS LIST -->
+                <!-- ============================ VIEW 1: CLASS LIST ============================ -->
                 <template v-if="!classInfo">
-                    <div class="mb-4 sm:mb-6">
-                        <div class="flex items-center gap-3 sm:gap-4">
-                            <div class="p-2.5 sm:p-3 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl shadow-lg shadow-emerald-500/25 flex-shrink-0">
-                                <svg class="w-6 h-6 sm:w-7 sm:h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                </svg>
-                            </div>
-                            <div class="min-w-0">
-                                <h1 class="text-xl sm:text-2xl lg:text-3xl font-bold bg-gradient-to-r from-emerald-800 to-teal-800 dark:from-emerald-300 dark:to-teal-300 bg-clip-text text-transparent truncate">
-                                    Student Results
-                                </h1>
-                                <p class="text-xs sm:text-sm text-emerald-600 dark:text-emerald-400 flex items-center gap-2 mt-1">
-                                    <span class="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                                    Select a class to view all students results
-                                </p>
-                            </div>
+                    <header class="mb-5 flex flex-wrap items-end justify-between gap-3 border-b border-slate-200 pb-4 dark:border-slate-800">
+                        <div>
+                            <h1 class="text-xl font-semibold text-slate-900 dark:text-white">Student Results</h1>
+                            <p class="mt-0.5 text-sm text-slate-500 dark:text-slate-400">Select a class to review its examination results.</p>
                         </div>
-                    </div>
+                        <a
+                            :href="route('reports.class-wise', { academic_year: selectedYear })"
+                            target="_blank"
+                            rel="noopener"
+                            class="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                        >
+                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
+                            Class-wise result (A4)
+                        </a>
+                    </header>
 
-                    <div v-if="flash?.success" class="mb-4 sm:mb-6 p-3 sm:p-4 rounded-xl bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800">
-                        <p class="text-sm font-medium text-green-800 dark:text-green-200 break-words">✅ {{ flash.success }}</p>
-                    </div>
-                    <div v-if="flash?.error" class="mb-4 sm:mb-6 p-3 sm:p-4 rounded-xl bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800">
-                        <p class="text-sm font-medium text-red-800 dark:text-red-200 break-words">❌ {{ flash.error }}</p>
-                    </div>
+                    <div v-if="flash?.success" class="mb-4 rounded-md border border-l-4 border-slate-200 border-l-green-600 bg-white px-4 py-3 text-sm text-slate-800 dark:border-slate-700 dark:border-l-green-500 dark:bg-slate-900 dark:text-slate-100">{{ flash.success }}</div>
+                    <div v-if="flash?.error" class="mb-4 rounded-md border border-l-4 border-slate-200 border-l-red-600 bg-white px-4 py-3 text-sm text-slate-800 dark:border-slate-700 dark:border-l-red-500 dark:bg-slate-900 dark:text-slate-100">{{ flash.error }}</div>
 
-                    <!-- Year Filter + 🆕 Class & Section Filter -->
-                    <div class="mb-4 sm:mb-6 bg-white dark:bg-slate-900 rounded-2xl border border-emerald-200/60 dark:border-emerald-800/60 shadow-sm p-4 sm:p-5 transition-colors duration-300">
-                        <div class="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4">
-                            <div class="flex items-center gap-3">
-                                <div class="p-2 rounded-lg bg-emerald-100 dark:bg-emerald-900/40 flex-shrink-0">
-                                    <svg class="w-5 h-5 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                    </svg>
-                                </div>
-                                <div>
-                                    <h3 class="text-sm font-bold text-emerald-800 dark:text-emerald-200">Academic Year</h3>
-                                    <p class="text-xs text-emerald-500 dark:text-emerald-400">Select year, class & section</p>
-                                </div>
-                            </div>
-
-                            <div class="flex flex-col md:flex-row items-stretch md:items-end gap-3 w-full xl:w-auto">
-                                <!-- Year control (unchanged) -->
-                                <div class="relative flex items-center gap-2 w-full md:w-auto">
-                                    <button
-                                        type="button"
-                                        @click="decrementYear"
-                                        class="p-2 rounded-lg border-2 border-emerald-200 dark:border-emerald-800 bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 hover:border-emerald-400 transition-colors active:scale-95 flex-shrink-0"
-                                        title="Previous year"
-                                    >
-                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7" />
-                                        </svg>
+                    <!-- Filters -->
+                    <section class="mb-5 rounded-md border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                        <div class="flex flex-wrap items-end gap-3">
+                            <!-- Academic year -->
+                            <div>
+                                <label class="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Academic year</label>
+                                <div class="flex items-center gap-1">
+                                    <button type="button" @click="decrementYear" title="Previous year" class="flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800">
+                                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
                                     </button>
 
-                                    <div class="relative flex-1 sm:flex-none" @focusout="setTimeout(() => showYearDropdown = false, 200)">
+                                    <div class="relative" @focusout="setTimeout(() => showYearDropdown = false, 200)">
                                         <input
                                             v-model="yearInput"
                                             @focus="showYearDropdown = true"
@@ -685,685 +681,405 @@ const getDob = (s) => s?.dob || s?.date_of_birth || '—'
                                             pattern="[0-9]*"
                                             maxlength="4"
                                             placeholder="YYYY"
-                                            class="w-full sm:w-36 rounded-xl border-2 border-emerald-200 dark:border-emerald-800 bg-emerald-50/30 dark:bg-slate-800/50 pl-4 pr-10 py-2 sm:py-2.5 text-sm font-bold text-emerald-900 dark:text-emerald-100 text-center tracking-wider outline-none cursor-text focus:border-emerald-500 focus:bg-white dark:focus:bg-slate-800 focus:ring-4 focus:ring-emerald-500/10"
+                                            class="h-9 w-28 rounded-md border border-slate-300 bg-white px-3 text-center text-sm font-semibold tracking-wider text-slate-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                                         />
-
-                                        <button
-                                            type="button"
-                                            @click="showYearDropdown = !showYearDropdown"
-                                            class="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md text-emerald-500 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-colors"
-                                        >
-                                            <svg
-                                                class="w-4 h-4 transition-transform duration-200"
-                                                :class="showYearDropdown ? 'rotate-180' : ''"
-                                                fill="none"
-                                                stroke="currentColor"
-                                                viewBox="0 0 24 24"
-                                            >
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-                                            </svg>
-                                        </button>
-
-                                        <div
-                                            v-if="showYearDropdown && filteredYearSuggestions.length > 0"
-                                            class="absolute top-full left-0 sm:left-auto sm:right-0 mt-2 w-full sm:w-44 bg-white dark:bg-slate-900 rounded-xl border-2 border-emerald-200 dark:border-emerald-800 shadow-xl z-50 overflow-hidden"
-                                        >
+                                        <div v-if="showYearDropdown && filteredYearSuggestions.length > 0" class="absolute left-0 top-full z-50 mt-1 w-full overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-900">
                                             <div class="max-h-60 overflow-y-auto py-1">
                                                 <button
                                                     v-for="year in filteredYearSuggestions"
                                                     :key="year"
                                                     type="button"
                                                     @mousedown.prevent="selectYearSuggestion(year)"
-                                                    class="w-full text-left px-4 py-2 text-sm font-medium transition-colors flex items-center justify-between"
-                                                    :class="year === selectedYear
-                                                        ? 'bg-emerald-600 text-white'
-                                                        : 'text-emerald-800 dark:text-emerald-200 hover:bg-emerald-50 dark:hover:bg-emerald-950/50'"
+                                                    class="flex w-full items-center justify-between px-3 py-1.5 text-left text-sm"
+                                                    :class="year === selectedYear ? 'bg-blue-700 text-white' : 'text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800'"
                                                 >
                                                     <span>{{ year }}</span>
-                                                    <span
-                                                        v-if="year === new Date().getFullYear()"
-                                                        class="text-[9px] px-1.5 py-0.5 rounded-full font-bold"
-                                                        :class="year === selectedYear
-                                                            ? 'bg-white/20 text-white'
-                                                            : 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300'"
-                                                    >
-                                                        NOW
-                                                    </span>
+                                                    <span v-if="year === new Date().getFullYear()" class="text-[10px] font-semibold uppercase tracking-wide" :class="year === selectedYear ? 'text-blue-100' : 'text-slate-400'">Current</span>
                                                 </button>
                                             </div>
                                         </div>
                                     </div>
 
-                                    <button
-                                        type="button"
-                                        @click="incrementYear"
-                                        class="p-2 rounded-lg border-2 border-emerald-200 dark:border-emerald-800 bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 hover:border-emerald-400 transition-colors active:scale-95 flex-shrink-0"
-                                        title="Next year"
-                                    >
-                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7" />
-                                        </svg>
+                                    <button type="button" @click="incrementYear" title="Next year" class="flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800">
+                                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
                                     </button>
                                 </div>
-
-                                <!-- 🆕 Class select -->
-                                <div class="w-full md:w-44">
-                                    <label class="block text-[10px] font-bold text-emerald-500 dark:text-emerald-400 uppercase tracking-wider mb-1">Class</label>
-                                    <select
-                                        v-model="filterClassName"
-                                        @change="handleFilterClassChange"
-                                        class="w-full rounded-xl border-2 border-emerald-200 dark:border-emerald-800 bg-white dark:bg-slate-800 px-3 py-2 sm:py-2.5 text-sm font-semibold text-emerald-900 dark:text-emerald-100 outline-none cursor-pointer focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10"
-                                    >
-                                        <option value="">All Classes</option>
-                                        <option v-for="cn in filterClassNames" :key="cn" :value="cn">{{ cn }}</option>
-                                    </select>
-                                </div>
-
-                                <!-- 🆕 Section select -->
-                                <div class="w-full md:w-40">
-                                    <label class="block text-[10px] font-bold text-emerald-500 dark:text-emerald-400 uppercase tracking-wider mb-1">Section</label>
-                                    <select
-                                        v-model="filterSection"
-                                        @change="handleFilterSectionChange"
-                                        class="w-full rounded-xl border-2 border-emerald-200 dark:border-emerald-800 bg-white dark:bg-slate-800 px-3 py-2 sm:py-2.5 text-sm font-semibold text-emerald-900 dark:text-emerald-100 outline-none cursor-pointer focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10"
-                                    >
-                                        <option value="">All Sections</option>
-                                        <option v-for="sec in filterSections" :key="sec" :value="sec">{{ sec }}</option>
-                                        <option v-if="filterHasNoSection" value="__none__">No Section</option>
-                                    </select>
-                                </div>
-
-                                <!-- 🆕 Clear class/section filters -->
-                                <button
-                                    v-if="hasClassFilters"
-                                    type="button"
-                                    @click="resetClassFilters"
-                                    class="px-4 py-2 sm:py-2.5 text-sm font-medium text-rose-600 dark:text-rose-400 border-2 border-rose-200 dark:border-rose-800 rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors flex-shrink-0"
-                                >
-                                    ✕ Clear
-                                </button>
                             </div>
-                        </div>
-                    </div>
 
-                    <!-- No Classes -->
-                    <div v-if="classes.length === 0" class="bg-white dark:bg-slate-900 rounded-2xl p-8 sm:p-12 border border-emerald-200/60 dark:border-emerald-800/60 shadow-sm text-center transition-colors duration-300">
-                        <svg class="w-12 h-12 sm:w-16 sm:h-16 text-emerald-300 dark:text-emerald-700 mx-auto mb-3 sm:mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                        </svg>
-                        <h3 class="text-base sm:text-lg font-bold text-emerald-800 dark:text-emerald-200 mb-2">No Classes Found</h3>
-                        <p class="text-xs sm:text-sm text-emerald-600 dark:text-emerald-400">
-                            No classes for year <strong>{{ selectedYear }}</strong>.
-                        </p>
-                    </div>
+                            <div v-if="groups.length" class="w-full sm:w-40">
+                                <label class="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Study group</label>
+                                <select v-model="filterGroup" @change="handleFilterGroupChange" class="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+                                    <option value="">All groups</option>
+                                    <option v-for="g in groups" :key="g.id" :value="String(g.id)">{{ g.name }}</option>
+                                </select>
+                            </div>
 
-                    <!-- Class Cards -->
-                    <div v-else>
-                        <div class="mb-4 flex items-center gap-2 flex-wrap">
-                            <h2 class="text-base sm:text-lg font-bold text-emerald-800 dark:text-emerald-200">
-                                📚 Classes for {{ selectedYear }}
-                            </h2>
-                            <span class="text-xs bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-300 px-2.5 py-1 rounded-full font-semibold">
-                                {{ classes.length }} classes
-                            </span>
-                        </div>
+                            <div v-if="shifts.length > 1" class="w-full sm:w-36">
+                                <label class="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Shift</label>
+                                <select v-model="filterShift" @change="fetchClasses" class="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+                                    <option value="">All shifts</option>
+                                    <option v-for="x in shifts" :key="x.id" :value="String(x.id)">{{ x.name }}</option>
+                                </select>
+                            </div>
 
-                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
-                            <button
-                                v-for="cls in classes"
-                                :key="cls.id"
-                                @click="openClass(cls.id)"
-                                class="group relative bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-6 border border-emerald-200/60 dark:border-emerald-800/60 shadow-sm hover:shadow-xl hover:border-emerald-400 dark:hover:border-emerald-600 transition-all duration-300 text-left overflow-hidden"
-                            >
-                                <div class="absolute -top-8 -right-8 w-24 h-24 rounded-full bg-gradient-to-br from-emerald-400/20 to-teal-500/20 dark:from-emerald-600/20 dark:to-teal-700/20 group-hover:scale-150 transition-transform duration-500"></div>
+                            <div v-if="mediums.length > 1" class="w-full sm:w-36">
+                                <label class="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Medium</label>
+                                <select v-model="filterMedium" @change="fetchClasses" class="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+                                    <option value="">All mediums</option>
+                                    <option v-for="x in mediums" :key="x.id" :value="String(x.id)">{{ x.name }}</option>
+                                </select>
+                            </div>
 
-                                <div class="relative">
-                                    <div class="flex items-start justify-between mb-3 sm:mb-4">
-                                        <div class="p-2.5 sm:p-3 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg shadow-emerald-500/20">
-                                            <svg class="w-5 h-5 sm:w-6 sm:h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                                            </svg>
-                                        </div>
+                            <div class="w-full sm:w-44">
+                                <label class="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Class</label>
+                                <select v-model="filterClassName" @change="handleFilterClassChange" class="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+                                    <option value="">All classes</option>
+                                    <option v-for="cn in filterClassNames" :key="cn" :value="cn">{{ cn }}</option>
+                                </select>
+                            </div>
 
-                                        <span class="inline-flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700">
-                                            {{ cls.subjects?.length || 0 }} subjects
-                                        </span>
-                                    </div>
+                            <div class="w-full sm:w-40">
+                                <label class="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Section</label>
+                                <select v-model="filterSection" @change="handleFilterSectionChange" class="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+                                    <option value="">All sections</option>
+                                    <option v-for="sec in filterSections" :key="sec" :value="sec">{{ sec }}</option>
+                                    <option v-if="filterHasNoSection" value="__none__">No section</option>
+                                </select>
+                            </div>
 
-                                    <h3 class="text-lg sm:text-xl font-bold text-emerald-900 dark:text-emerald-100 mb-1 truncate">
-                                        {{ cls.class_name }}
-                                    </h3>
-                                    <p class="text-sm font-semibold text-teal-600 dark:text-teal-400 mb-1">
-                                        Section: {{ cls.section || 'N/A' }}
-                                    </p>
-
-                                    <p v-if="isAdmin" class="text-xs text-emerald-500 dark:text-emerald-400 mb-3 flex items-center gap-1 font-medium">
-                                        <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                        </svg>
-                                        <span class="truncate">Teacher: {{ cls.class_teacher || 'Unassigned' }}</span>
-                                    </p>
-                                    <p v-else class="mb-3"></p>
-
-                                    <div v-if="cls.subjects?.length" class="flex flex-wrap gap-1 mb-3 sm:mb-4">
-                                        <span
-                                            v-for="subject in cls.subjects.slice(0, 3)"
-                                            :key="subject"
-                                            class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-300 border border-emerald-100 dark:border-emerald-800"
-                                        >
-                                            {{ subject }}
-                                        </span>
-                                        <span
-                                            v-if="cls.subjects.length > 3"
-                                            class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-teal-50 dark:bg-teal-900/40 text-teal-600 dark:text-teal-300 border border-teal-100 dark:border-teal-800"
-                                        >
-                                            +{{ cls.subjects.length - 3 }} more
-                                        </span>
-                                    </div>
-
-                                    <div class="flex items-center justify-between pt-3 sm:pt-4 border-t border-emerald-100 dark:border-emerald-800">
-                                        <span class="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a4 4 0 00-4-4h-1M9 20H4v-2a4 4 0 014-4h1m8-5a4 4 0 11-8 0 4 4 0 018 0z" />
-                                            </svg>
-                                            {{ cls.student_count }} students
-                                        </span>
-                                        <span class="text-xs font-semibold text-teal-600 dark:text-teal-400 group-hover:text-teal-800 dark:group-hover:text-teal-200 transition-colors">
-                                            View Results →
-                                        </span>
-                                    </div>
-                                </div>
+                            <button v-if="hasClassFilters" type="button" @click="resetClassFilters" class="h-9 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800">
+                                Clear filters
                             </button>
                         </div>
+                    </section>
+
+                    <!-- No classes -->
+                    <div v-if="classes.length === 0" class="rounded-md border border-slate-200 bg-white px-6 py-14 text-center dark:border-slate-800 dark:bg-slate-900">
+                        <h3 class="text-base font-semibold text-slate-800 dark:text-slate-100">No classes found</h3>
+                        <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">There are no classes for the academic year <strong>{{ selectedYear }}</strong> with these filters.</p>
                     </div>
+
+                    <!-- Class table -->
+                    <section v-else class="overflow-hidden rounded-md border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+                        <div class="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-800">
+                            <h2 class="text-sm font-semibold text-slate-800 dark:text-slate-100">Classes — {{ selectedYear }}</h2>
+                            <span class="text-xs text-slate-500 dark:text-slate-400">{{ classes.length }} {{ classes.length === 1 ? 'class' : 'classes' }}</span>
+                        </div>
+
+                        <div class="overflow-x-auto">
+                            <table class="w-full min-w-[760px] text-sm">
+                                <thead class="bg-slate-100 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                                    <tr>
+                                        <th class="px-4 py-2.5">Class</th>
+                                        <th class="px-4 py-2.5">Section</th>
+                                        <th class="px-4 py-2.5">Group</th>
+                                        <th class="px-4 py-2.5">Shift · Medium</th>
+                                        <th v-if="isAdmin" class="px-4 py-2.5">Class teacher</th>
+                                        <th class="px-4 py-2.5 text-right">Subjects</th>
+                                        <th class="px-4 py-2.5 text-right">Students</th>
+                                        <th class="px-4 py-2.5"><span class="sr-only">Open</span></th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
+                                    <tr
+                                        v-for="cls in classes"
+                                        :key="cls.id"
+                                        @click="openClass(cls.id)"
+                                        class="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                                    >
+                                        <td class="px-4 py-3 font-semibold text-slate-900 dark:text-white">{{ cls.class_label || cls.class_name }}</td>
+                                        <td class="px-4 py-3">{{ cls.section || '—' }}</td>
+                                        <td class="px-4 py-3">{{ cls.group || '—' }}</td>
+                                        <td class="px-4 py-3 text-slate-600 dark:text-slate-300">{{ [cls.shift, cls.medium].filter(Boolean).join(' · ') || '—' }}</td>
+                                        <td v-if="isAdmin" class="px-4 py-3 text-slate-600 dark:text-slate-300">{{ cls.class_teacher || 'Unassigned' }}</td>
+                                        <td class="px-4 py-3 text-right tabular-nums">{{ cls.subjects?.length || 0 }}</td>
+                                        <td class="px-4 py-3 text-right tabular-nums">{{ cls.student_count }}</td>
+                                        <td class="px-4 py-3 text-right">
+                                            <button type="button" @click.stop="openClass(cls.id)" class="rounded-md border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">View results</button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
                 </template>
 
-                <!-- VIEW 2: STUDENTS RESULT LIST -->
+                <!-- ============================ VIEW 2: CLASS RESULT ============================ -->
                 <template v-else>
-                    <div class="mb-4 sm:mb-6">
-                        <button
-                            @click="backToClasses"
-                            class="inline-flex items-center gap-1.5 text-sm font-medium text-emerald-600 dark:text-emerald-400 hover:text-emerald-800 dark:hover:text-emerald-200 mb-3 transition-colors"
-                        >
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-                            </svg>
-                            Back to Classes
-                        </button>
+                    <button type="button" @click="backToClasses" class="mb-3 inline-flex items-center gap-1.5 text-sm font-medium text-blue-700 hover:underline dark:text-blue-400">
+                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
+                        All classes
+                    </button>
 
-                        <div class="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3 sm:gap-4">
-                            <div class="flex items-center gap-3 sm:gap-4 w-full lg:w-auto">
-                                <div class="p-2.5 sm:p-3 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl shadow-lg shadow-emerald-500/25 flex-shrink-0">
-                                    <svg class="w-6 h-6 sm:w-7 sm:h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                                    </svg>
+                    <header class="mb-5 flex flex-wrap items-end justify-between gap-3 border-b border-slate-200 pb-4 dark:border-slate-800">
+                        <div class="min-w-0">
+                            <h1 class="text-xl font-semibold text-slate-900 dark:text-white">
+                                {{ classInfo.class_label || classInfo.class_name }}<template v-if="classInfo.section"> — Section {{ classInfo.section_label || classInfo.section }}</template>
+                            </h1>
+                            <p class="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
+                                Academic year {{ classInfo.academic_year }}
+                                <template v-if="classInfo.group"> · {{ classInfo.group }}</template>
+                                <template v-if="classInfo.shift"> · {{ classInfo.shift }}</template>
+                                <template v-if="classInfo.medium"> · {{ classInfo.medium }} medium</template>
+                                · {{ totalStudents }} students
+                            </p>
+                        </div>
+
+                        <div class="flex flex-wrap gap-2">
+                            <a :href="route('tabulation.show', { class: classInfo.id, exam_type: selectedExam })" target="_blank" rel="noopener" class="inline-flex h-9 items-center rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800">Tabulation sheet</a>
+                            <a :href="route('reports.marksheet.class', { class: classInfo.id, exam_type: selectedExam })" target="_blank" rel="noopener" class="inline-flex h-9 items-center rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800">Marksheets</a>
+                            <a :href="route('reports.summary.class', { class: classInfo.id, exam_type: selectedExam })" target="_blank" rel="noopener" class="inline-flex h-9 items-center rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800">Result summary</a>
+                        </div>
+                    </header>
+
+                    <div v-if="flash?.success" class="mb-4 rounded-md border border-l-4 border-slate-200 border-l-green-600 bg-white px-4 py-3 text-sm text-slate-800 dark:border-slate-700 dark:border-l-green-500 dark:bg-slate-900 dark:text-slate-100">{{ flash.success }}</div>
+                    <div v-if="flash?.error" class="mb-4 rounded-md border border-l-4 border-slate-200 border-l-red-600 bg-white px-4 py-3 text-sm text-slate-800 dark:border-slate-700 dark:border-l-red-500 dark:bg-slate-900 dark:text-slate-100">{{ flash.error }}</div>
+
+                    <!-- Figures -->
+                    <section class="mb-4 grid grid-cols-2 divide-x divide-y divide-slate-200 overflow-hidden rounded-md border border-slate-200 bg-white sm:grid-cols-4 sm:divide-y-0 dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-900">
+                        <div class="px-4 py-3">
+                            <p class="text-xs font-medium text-slate-500 dark:text-slate-400">Students shown</p>
+                            <p class="mt-0.5 text-xl font-semibold tabular-nums text-slate-900 dark:text-white">{{ students.total || 0 }} <span class="text-sm font-normal text-slate-400">/ {{ totalStudents }}</span></p>
+                        </div>
+                        <div class="px-4 py-3">
+                            <p class="text-xs font-medium text-slate-500 dark:text-slate-400">Passed</p>
+                            <p class="mt-0.5 text-xl font-semibold tabular-nums text-green-700 dark:text-green-400">{{ passedCount }}</p>
+                        </div>
+                        <div class="px-4 py-3">
+                            <p class="text-xs font-medium text-slate-500 dark:text-slate-400">Failed</p>
+                            <p class="mt-0.5 text-xl font-semibold tabular-nums text-red-700 dark:text-red-400">{{ studentsList.filter(s => s.has_fail).length }}</p>
+                        </div>
+                        <div class="px-4 py-3">
+                            <p class="text-xs font-medium text-slate-500 dark:text-slate-400">Examination</p>
+                            <p class="mt-1 text-sm font-semibold text-slate-900 dark:text-white">{{ activeExamLabel }}</p>
+                        </div>
+                    </section>
+
+                    <!-- Search and exam -->
+                    <section class="mb-4 rounded-md border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-12">
+                            <div class="md:col-span-5">
+                                <label class="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Student name or ID</label>
+                                <div class="relative">
+                                    <svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                                    <input v-model="search" type="text" placeholder="Search…" class="h-9 w-full rounded-md border border-slate-300 bg-white pl-9 pr-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
                                 </div>
-                                <div class="min-w-0">
-                                    <h1 class="text-lg sm:text-2xl font-bold bg-gradient-to-r from-emerald-800 to-teal-800 dark:from-emerald-300 dark:to-teal-300 bg-clip-text text-transparent truncate">
-                                        {{ classInfo.class_name }} — {{ classInfo.section }}
-                                    </h1>
-                                    <p class="text-xs sm:text-sm text-emerald-600 dark:text-emerald-400 mt-0.5">
-                                        Academic Year: {{ classInfo.academic_year }}
-                                        <span class="mx-1">·</span>
-                                        <span class="font-semibold">{{ students.total || 0 }}</span> of {{ totalStudents }} students
-                                    </p>
-                                </div>
+                            </div>
+                            <div class="md:col-span-3">
+                                <label class="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Roll number</label>
+                                <input v-model="rollNumber" type="text" placeholder="Roll…" class="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
+                            </div>
+                            <div class="md:col-span-3">
+                                <label class="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Examination</label>
+                                <select v-model="selectedExam" @change="handleExamChange" class="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+                                    <option v-for="et in examTypes" :key="et.value" :value="et.value">{{ et.label }}</option>
+                                </select>
+                            </div>
+                            <div class="flex items-end md:col-span-1">
+                                <button type="button" @click="resetStudentFilters" :disabled="!hasActiveFilters" title="Reset filters" class="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800">Reset</button>
                             </div>
                         </div>
-                    </div>
 
-                    <!-- Flash messages (view 2) -->
-                    <div v-if="flash?.success" class="mb-4 sm:mb-6 p-3 sm:p-4 rounded-xl bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800">
-                        <p class="text-sm font-medium text-green-800 dark:text-green-200 break-words">✅ {{ flash.success }}</p>
-                    </div>
-                    <div v-if="flash?.error" class="mb-4 sm:mb-6 p-3 sm:p-4 rounded-xl bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800">
-                        <p class="text-sm font-medium text-red-800 dark:text-red-200 break-words">❌ {{ flash.error }}</p>
-                    </div>
+                        <div v-if="hasActiveFilters" class="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-200 pt-3 text-xs dark:border-slate-800">
+                            <span class="font-medium text-slate-500 dark:text-slate-400">Filters:</span>
+                            <span v-if="search" class="inline-flex items-center gap-1 rounded border border-slate-300 bg-slate-50 px-2 py-0.5 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                                Name: {{ search }}
+                                <button type="button" @click="search = ''; applyStudentFilters()" class="text-slate-400 hover:text-slate-700 dark:hover:text-slate-100" title="Remove"><svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12" /></svg></button>
+                            </span>
+                            <span v-if="rollNumber" class="inline-flex items-center gap-1 rounded border border-slate-300 bg-slate-50 px-2 py-0.5 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                                Roll: {{ rollNumber }}
+                                <button type="button" @click="rollNumber = ''; applyStudentFilters()" class="text-slate-400 hover:text-slate-700 dark:hover:text-slate-100" title="Remove"><svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12" /></svg></button>
+                            </span>
+                        </div>
+                    </section>
 
-                    <!-- ⭐ SHIFT TOOLBAR -->
-                    <div class="mb-4 sm:mb-5 bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-950/40 dark:to-purple-950/40 rounded-2xl border-2 border-indigo-200 dark:border-indigo-800 shadow-sm p-3 sm:p-4 transition-colors duration-300">
-                        <div class="flex flex-col lg:flex-row items-stretch lg:items-center gap-3">
+                    <!-- Promotion -->
+                    <section class="mb-4 rounded-md border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+                        <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 py-2.5 dark:border-slate-800">
+                            <h2 class="text-sm font-semibold text-slate-800 dark:text-slate-100">Move students to the next year</h2>
+                            <p class="text-sm text-slate-600 dark:text-slate-300">
+                                <span class="font-semibold tabular-nums">{{ props.classInfo?.academic_year || props.filters?.academic_year || '—' }}</span>
+                                <span class="mx-1.5 text-slate-400">→</span>
+                                <span class="font-semibold tabular-nums">{{ nextYear }}</span>
+                            </p>
+                        </div>
 
-                            <div class="flex items-center gap-2 bg-white dark:bg-slate-800 rounded-xl border-2 border-indigo-200 dark:border-indigo-800 px-3 py-2 shadow-sm flex-shrink-0">
-                                <div class="text-center">
-                                    <p class="text-[9px] font-bold text-indigo-400 dark:text-indigo-500 uppercase tracking-wider">From</p>
-                                    <p class="text-sm sm:text-base font-extrabold text-indigo-700 dark:text-indigo-300 leading-none">
-                                        {{ props.classInfo?.academic_year || props.filters?.academic_year || '—' }}
-                                    </p>
-                                </div>
-
-                                <svg class="w-5 h-5 text-indigo-400 dark:text-indigo-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                                </svg>
-
-                                <div class="text-center">
-                                    <p class="text-[9px] font-bold text-emerald-500 dark:text-emerald-400 uppercase tracking-wider">To</p>
-                                    <p class="text-sm sm:text-base font-extrabold text-emerald-600 dark:text-emerald-400 leading-none">
-                                        {{ nextYear }}
-                                    </p>
-                                </div>
-                            </div>
-
-                            <div class="flex items-center gap-2 flex-wrap">
-                                <button
-                                    type="button"
-                                    @click="selectAllPassed"
-                                    :disabled="passedCount === 0"
-                                    class="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 px-3 sm:px-4 py-2 text-xs sm:text-sm font-bold text-white shadow-md shadow-emerald-500/25 transition-all hover:from-emerald-600 hover:to-teal-700 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
-                                >
-                                    <svg class="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
-                                    </svg>
-                                    Select All Passed ({{ passedCount }})
+                        <div class="flex flex-col gap-3 p-4 lg:flex-row lg:items-center">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <button type="button" @click="selectAllPassed" :disabled="passedCount === 0" class="inline-flex h-9 items-center rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800">
+                                    Select all passed ({{ passedCount }})
                                 </button>
-
-                                <button
-                                    v-if="selectedCount > 0"
-                                    type="button"
-                                    @click="clearSelection"
-                                    class="inline-flex items-center gap-1.5 rounded-xl border-2 border-rose-300 dark:border-rose-800 bg-white dark:bg-slate-800 px-3 sm:px-4 py-2 text-xs sm:text-sm font-bold text-rose-600 dark:text-rose-400 shadow-sm transition-all hover:bg-rose-50 dark:hover:bg-rose-950/50 active:scale-95"
-                                >
-                                    <svg class="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12" />
-                                    </svg>
-                                    Clear
-                                </button>
-
-                                <span v-if="selectedCount > 0" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 text-xs font-bold">
-                                    {{ selectedCount }} selected
-                                </span>
+                                <button v-if="selectedCount > 0" type="button" @click="clearSelection" class="inline-flex h-9 items-center rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800">Clear selection</button>
+                                <span v-if="selectedCount > 0" class="text-sm font-semibold text-blue-700 dark:text-blue-400">{{ selectedCount }} selected</span>
                             </div>
 
                             <div class="flex-1"></div>
 
-                            <div class="flex items-stretch gap-2 flex-wrap">
-                                <select
-                                    v-model="targetClass"
-                                    :disabled="selectedCount === 0"
-                                    class="flex-1 lg:flex-none lg:w-44 rounded-xl border-2 border-indigo-200 dark:border-indigo-800 bg-white dark:bg-slate-800 px-3 py-2 text-xs sm:text-sm font-semibold text-indigo-900 dark:text-indigo-100 outline-none cursor-pointer focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 disabled:opacity-50"
-                                >
-                                    <option value="">-- Target class --</option>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <select v-model="targetClass" :disabled="selectedCount === 0" class="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600/20 disabled:opacity-50 sm:w-44 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+                                    <option value="">Target class</option>
                                     <option v-for="c in classNames" :key="c" :value="c">{{ c }}</option>
                                 </select>
-
-                                <select
-                                    v-model="targetSection"
-                                    :disabled="selectedCount === 0 || !targetClass"
-                                    class="flex-1 lg:flex-none lg:w-32 rounded-xl border-2 border-indigo-200 dark:border-indigo-800 bg-white dark:bg-slate-800 px-3 py-2 text-xs sm:text-sm font-semibold text-indigo-900 dark:text-indigo-100 outline-none cursor-pointer focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 disabled:opacity-50"
-                                >
+                                <select v-model="targetSection" :disabled="selectedCount === 0 || !targetClass" class="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600/20 disabled:opacity-50 sm:w-32 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
                                     <option value="">Section</option>
                                     <option v-for="s in availableSections" :key="s" :value="s">{{ s }}</option>
                                 </select>
-
-                                <button
-                                    type="button"
-                                    @click="shiftSelected"
-                                    :disabled="selectedCount === 0 || !targetClass || shifting"
-                                    class="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 px-4 sm:px-5 py-2 text-xs sm:text-sm font-bold text-white shadow-md shadow-indigo-500/25 transition-all hover:from-indigo-700 hover:to-purple-700 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
-                                >
-                                    <svg v-if="shifting" class="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-                                    </svg>
-                                    <svg v-else class="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                                    </svg>
-                                    {{ shifting ? 'Shifting...' : `Shift ${selectedCount || ''}` }}
+                                <button type="button" @click="shiftSelected" :disabled="selectedCount === 0 || !targetClass || shifting" class="inline-flex h-9 items-center gap-2 whitespace-nowrap rounded-md bg-blue-700 px-4 text-sm font-semibold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50">
+                                    <svg v-if="shifting" class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                                    {{ shifting ? 'Moving…' : `Move ${selectedCount || ''} to ${nextYear}`.replace('  ', ' ') }}
                                 </button>
                             </div>
                         </div>
 
-                        <p class="mt-2 text-[11px] sm:text-xs text-indigo-600 dark:text-indigo-400 font-medium">
-                            💡 Shifting from <strong>{{ props.classInfo?.academic_year || props.filters?.academic_year }}</strong> to <strong>{{ nextYear }}</strong>. Original records stay untouched. Roll numbers are preserved.
+                        <p class="border-t border-slate-200 px-4 py-2 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                            The original records stay untouched; the students are added to the new year's class and keep their ID and roll number.
                         </p>
+                    </section>
+
+                    <!-- Empty -->
+                    <div v-if="studentsList.length === 0" class="rounded-md border border-slate-200 bg-white px-6 py-14 text-center dark:border-slate-800 dark:bg-slate-900">
+                        <h3 class="text-base font-semibold text-slate-800 dark:text-slate-100">{{ hasActiveFilters ? 'No matching students' : 'No students found' }}</h3>
+                        <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">{{ hasActiveFilters ? 'Try changing the search or the filters.' : 'This class has no active students.' }}</p>
+                        <button v-if="hasActiveFilters" type="button" @click="resetStudentFilters" class="mt-4 inline-flex h-9 items-center rounded-md bg-blue-700 px-4 text-sm font-semibold text-white hover:bg-blue-800">Reset filters</button>
                     </div>
 
-                    <!-- FILTER SECTION -->
-                    <div class="mb-4 sm:mb-6 bg-white dark:bg-slate-900 rounded-2xl border border-emerald-200/60 dark:border-emerald-800/60 shadow-sm p-4 sm:p-5 transition-colors duration-300">
-                        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-12 gap-3 sm:gap-4">
-                            <div class="md:col-span-5">
-                                <label class="block text-xs font-bold text-emerald-700 dark:text-emerald-300 uppercase tracking-wider mb-1.5 sm:mb-2">
-                                    🔍 Search Name / ID
-                                </label>
-                                <div class="relative">
-                                    <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-emerald-400 dark:text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                                    </svg>
-                                    <input
-                                        v-model="search"
-                                        type="text"
-                                        placeholder="Type student name or ID..."
-                                        class="w-full rounded-xl border-2 border-emerald-200 dark:border-emerald-800 bg-emerald-50/30 dark:bg-slate-800/50 pl-10 pr-4 py-2 sm:py-2.5 text-sm text-emerald-900 dark:text-emerald-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none transition-all focus:border-emerald-500 focus:bg-white dark:focus:bg-slate-800 focus:ring-4 focus:ring-emerald-500/10"
-                                    />
-                                </div>
-                            </div>
-
-                            <div class="md:col-span-3">
-                                <label class="block text-xs font-bold text-emerald-700 dark:text-emerald-300 uppercase tracking-wider mb-1.5 sm:mb-2">
-                                    🎫 Roll Number
-                                </label>
-                                <input
-                                    v-model="rollNumber"
-                                    type="text"
-                                    placeholder="Search by roll..."
-                                    class="w-full rounded-xl border-2 border-emerald-200 dark:border-emerald-800 bg-emerald-50/30 dark:bg-slate-800/50 px-4 py-2 sm:py-2.5 text-sm text-emerald-900 dark:text-emerald-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none transition-all focus:border-emerald-500 focus:bg-white dark:focus:bg-slate-800 focus:ring-4 focus:ring-emerald-500/10"
-                                />
-                            </div>
-
-                            <div class="md:col-span-3">
-                                <label class="block text-xs font-bold text-emerald-700 dark:text-emerald-300 uppercase tracking-wider mb-1.5 sm:mb-2">
-                                    📝 Exam Type
-                                </label>
-                                <select
-                                    v-model="selectedExam"
-                                    @change="handleExamChange"
-                                    class="w-full rounded-xl border-2 border-emerald-200 dark:border-emerald-800 bg-emerald-50/30 dark:bg-slate-800/50 px-4 py-2 sm:py-2.5 text-sm font-medium text-emerald-900 dark:text-emerald-100 outline-none cursor-pointer focus:border-emerald-500 focus:bg-white dark:focus:bg-slate-800 focus:ring-4 focus:ring-emerald-500/10"
-                                >
-                                    <option v-for="et in examTypes" :key="et.value" :value="et.value">
-                                        {{ et.label }}
-                                    </option>
-                                </select>
-                            </div>
-
-                            <div class="md:col-span-1 flex items-end">
-                                <button
-                                    type="button"
-                                    @click="resetStudentFilters"
-                                    :disabled="!hasActiveFilters"
-                                    class="w-full p-2 sm:p-2.5 rounded-xl border-2 border-rose-200 dark:border-rose-800 bg-white dark:bg-slate-800 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/50 hover:border-rose-400 transition-colors active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
-                                    title="Reset filters"
-                                >
-                                    <svg class="w-5 h-5 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                    </svg>
-                                </button>
+                    <!-- Results table -->
+                    <section v-else class="overflow-hidden rounded-md border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+                        <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 py-2.5 dark:border-slate-800">
+                            <h2 class="text-sm font-semibold text-slate-800 dark:text-slate-100">{{ activeExamLabel }} — results</h2>
+                            <div class="flex items-center gap-3 text-xs font-medium">
+                                <button type="button" @click="expandAll" class="text-blue-700 hover:underline dark:text-blue-400">Show all subjects</button>
+                                <span class="text-slate-300 dark:text-slate-700">|</span>
+                                <button type="button" @click="collapseAll" class="text-blue-700 hover:underline dark:text-blue-400">Hide subjects</button>
                             </div>
                         </div>
 
-                        <div v-if="hasActiveFilters" class="mt-3 sm:mt-4 flex flex-wrap items-center gap-2 pt-3 border-t border-emerald-100 dark:border-emerald-800">
-                            <span class="text-xs font-semibold text-emerald-600 dark:text-emerald-400">Active filters:</span>
-                            <span v-if="search" class="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 text-xs font-medium">
-                                Name: "{{ search }}"
-                                <button @click="search = ''; applyStudentFilters()" class="hover:text-emerald-900 dark:hover:text-emerald-100">
-                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12" />
-                                    </svg>
-                                </button>
-                            </span>
-                            <span v-if="rollNumber" class="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 text-xs font-medium">
-                                Roll: "{{ rollNumber }}"
-                                <button @click="rollNumber = ''; applyStudentFilters()" class="hover:text-emerald-900 dark:hover:text-emerald-100">
-                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12" />
-                                    </svg>
-                                </button>
-                            </span>
-                        </div>
-                    </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full min-w-[920px] text-sm">
+                                <thead class="bg-slate-100 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                                    <tr>
+                                        <th class="w-10 px-3 py-2.5"><span class="sr-only">Select</span></th>
+                                        <th class="px-3 py-2.5">Roll</th>
+                                        <th class="px-3 py-2.5">Student</th>
+                                        <th class="px-3 py-2.5 text-right">Total</th>
+                                        <th class="px-3 py-2.5 text-right">GPA</th>
+                                        <th class="px-3 py-2.5 text-center">Grade</th>
+                                        <th class="px-3 py-2.5 text-center">Position</th>
+                                        <th class="px-3 py-2.5 text-center">Result</th>
+                                        <th class="px-3 py-2.5 text-right">Actions</th>
+                                    </tr>
+                                </thead>
 
-                    <!-- Summary Cards -->
-                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mb-4 sm:mb-6">
-                        <div class="bg-white dark:bg-slate-900 rounded-xl p-3 sm:p-4 border border-emerald-200/50 dark:border-emerald-800/60 shadow-sm transition-colors duration-300">
-                            <p class="text-[10px] sm:text-xs font-medium text-emerald-400 dark:text-emerald-500 uppercase tracking-wider">Showing</p>
-                            <p class="text-xl sm:text-2xl font-bold text-emerald-800 dark:text-emerald-200">
-                                {{ students.total || 0 }}
-                                <span class="text-xs sm:text-sm font-medium text-emerald-400 dark:text-emerald-500">/ {{ totalStudents }}</span>
-                            </p>
-                        </div>
-                        <div class="bg-white dark:bg-slate-900 rounded-xl p-3 sm:p-4 border border-green-200/50 dark:border-green-800/60 shadow-sm transition-colors duration-300">
-                            <p class="text-[10px] sm:text-xs font-medium text-green-500 dark:text-green-400 uppercase tracking-wider">Passed</p>
-                            <p class="text-xl sm:text-2xl font-bold text-green-600 dark:text-green-400">
-                                {{ passedCount }}
-                            </p>
-                        </div>
-                        <div class="bg-white dark:bg-slate-900 rounded-xl p-3 sm:p-4 border border-rose-200/50 dark:border-rose-800/60 shadow-sm transition-colors duration-300">
-                            <p class="text-[10px] sm:text-xs font-medium text-rose-500 dark:text-rose-400 uppercase tracking-wider">Failed</p>
-                            <p class="text-xl sm:text-2xl font-bold text-rose-600 dark:text-rose-400">
-                                {{ studentsList.filter(s => s.has_fail).length }}
-                            </p>
-                        </div>
-                        <div class="bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-950/40 dark:to-teal-950/40 rounded-xl p-3 sm:p-4 border border-emerald-200/50 dark:border-emerald-800/60 shadow-sm transition-colors duration-300">
-                            <p class="text-[10px] sm:text-xs font-medium text-emerald-400 dark:text-emerald-500 uppercase tracking-wider">Exam</p>
-                            <p class="text-xs sm:text-sm font-bold text-emerald-700 dark:text-emerald-300 mt-1">{{ activeExamLabel }}</p>
-                        </div>
-                    </div>
-
-                    <!-- Empty State -->
-                    <div v-if="studentsList.length === 0" class="bg-white dark:bg-slate-900 rounded-2xl p-8 sm:p-12 border border-emerald-200/60 dark:border-emerald-800/60 shadow-sm text-center transition-colors duration-300">
-                        <svg class="w-12 h-12 sm:w-16 sm:h-16 text-emerald-300 dark:text-emerald-700 mx-auto mb-3 sm:mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                        </svg>
-                        <h3 class="text-base sm:text-lg font-bold text-emerald-800 dark:text-emerald-200 mb-2">
-                            {{ hasActiveFilters ? 'No Matching Students' : 'No Students Found' }}
-                        </h3>
-                        <p class="text-xs sm:text-sm text-emerald-600 dark:text-emerald-400 mb-4">
-                            {{ hasActiveFilters
-                                ? 'Try changing your search or filter criteria.'
-                                : 'This class has no active students.' }}
-                        </p>
-                        <button
-                            v-if="hasActiveFilters"
-                            @click="resetStudentFilters"
-                            class="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 px-4 sm:px-5 py-2 sm:py-2.5 text-sm font-semibold text-white shadow-lg shadow-emerald-500/25 transition-all hover:from-emerald-600 hover:to-teal-700 active:scale-95"
-                        >
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                            </svg>
-                            Reset Filters
-                        </button>
-                    </div>
-
-                    <!-- Students List -->
-                    <div v-else class="space-y-3 sm:space-y-4">
-                        <div
-                            v-for="student in studentsList"
-                            :key="student.id"
-                            :class="[
-                                'bg-white dark:bg-slate-900 rounded-2xl border-2 shadow-sm overflow-hidden transition-all',
-                                isStudentSelected(student.id)
-                                    ? 'border-indigo-400 dark:border-indigo-600 ring-4 ring-indigo-100 dark:ring-indigo-900/40 shadow-md'
-                                    : student.is_shifted
-                                        ? 'border-amber-300 dark:border-amber-700 bg-amber-50/20 dark:bg-amber-950/20'
-                                        : 'border-emerald-200/60 dark:border-emerald-800/60 hover:shadow-md'
-                            ]"
-                        >
-                            <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3 sm:p-4 border-b border-emerald-100 dark:border-emerald-800 bg-gradient-to-r from-emerald-50/50 to-teal-50/50 dark:from-emerald-950/30 dark:to-teal-950/30">
-                                <div class="flex items-center gap-3 min-w-0 w-full sm:w-auto">
-
-                                    <!-- ⭐ Checkbox (disabled if failed OR already shifted) -->
-                                    <label
-                                        class="flex items-center gap-2 cursor-pointer select-none flex-shrink-0"
-                                        :title="
-                                            student.has_fail
-                                                ? 'Failed — cannot shift'
-                                                : student.is_shifted
-                                                    ? `Already shifted to ${student.shifted_to_class} (${student.shifted_to_year})`
-                                                    : 'Select to shift'
-                                        "
-                                    >
-                                        <input
-                                            type="checkbox"
-                                            :checked="isStudentSelected(student.id)"
-                                            :disabled="student.has_fail || student.is_shifted"
-                                            @change="toggleStudent(student.id)"
-                                            class="w-5 h-5 rounded-md border-2 border-emerald-300 dark:border-emerald-700 text-emerald-600 cursor-pointer focus:ring-2 focus:ring-emerald-500 disabled:opacity-30 disabled:cursor-not-allowed"
-                                        />
-                                    </label>
-
-                                    <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center overflow-hidden flex-shrink-0 ring-2 ring-white dark:ring-slate-800 shadow-sm">
-                                        <img
-                                            v-if="student.student_photo"
-                                            :src="'/storage/' + student.student_photo"
-                                            :alt="student.student_name"
-                                            class="w-full h-full object-cover"
-                                        />
-                                        <span v-else class="text-xs sm:text-sm font-bold text-white">
-                                            {{ student.student_name?.charAt(0)?.toUpperCase() }}
-                                        </span>
-                                    </div>
-                                    <div class="min-w-0">
-                                        <h3 class="text-sm sm:text-base font-bold text-emerald-900 dark:text-emerald-100 truncate">{{ student.student_name }}</h3>
-                                        <p class="text-xs text-emerald-600 dark:text-emerald-400 truncate">
-                                            {{ student.class }} - {{ student.section }}
-                                            <span v-if="student.roll_number"> · Roll {{ student.roll_number }}</span>
-                                            <span class="text-emerald-400 dark:text-emerald-500"> · {{ student.student_id }}</span>
-                                        </p>
-
-                                        <!-- ⭐ Already shifted badge -->
-                                        <div
-                                            v-if="student.is_shifted"
-                                            class="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700 text-[10px] font-bold"
-                                        >
-                                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7" />
-                                            </svg>
-                                            Shifted to {{ student.shifted_to_class }} ({{ student.shifted_to_year }})
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div class="flex items-center gap-1.5 sm:gap-2 flex-wrap w-full sm:w-auto">
-                                    <div
-                                        :class="[
-                                            'px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg border-2 text-center',
-                                            student.has_fail
-                                                ? 'bg-red-50 dark:bg-red-950/40 border-red-300 dark:border-red-800'
-                                                : 'bg-green-50 dark:bg-green-950/40 border-green-300 dark:border-green-800'
-                                        ]"
-                                    >
-                                        <p class="text-[8px] sm:text-[9px] font-bold uppercase tracking-wider"
-                                           :class="student.has_fail ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'">
-                                            Result
-                                        </p>
-                                        <p class="text-[10px] sm:text-xs font-bold"
-                                           :class="student.has_fail ? 'text-red-700 dark:text-red-300' : 'text-green-700 dark:text-green-300'">
-                                            {{ student.has_fail ? 'FAILED' : 'PASSED' }}
-                                        </p>
-                                    </div>
-
-                                    <div class="px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg bg-gradient-to-br from-cyan-100 to-teal-100 dark:from-cyan-950/40 dark:to-teal-950/40 border-2 border-cyan-300 dark:border-cyan-800 text-center">
-                                        <p class="text-[8px] sm:text-[9px] font-bold text-cyan-700 dark:text-cyan-400 uppercase tracking-wider">Total</p>
-                                        <p class="text-[10px] sm:text-xs font-bold text-cyan-900 dark:text-cyan-200">{{ getStudentTotalMarks(student) }}</p>
-                                    </div>
-
-                                    <div class="px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg bg-gradient-to-br from-amber-100 to-orange-100 dark:from-amber-950/40 dark:to-orange-950/40 border-2 border-amber-300 dark:border-amber-800 text-center">
-                                        <p class="text-[8px] sm:text-[9px] font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider">Position</p>
-                                        <p class="text-[10px] sm:text-xs font-bold text-amber-900 dark:text-amber-200">{{ getOrdinal(getStudentRank(student)) }}</p>
-                                    </div>
-
-                                    <div class="px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg bg-gradient-to-br from-emerald-100 to-teal-100 dark:from-emerald-950/40 dark:to-teal-950/40 border-2 border-emerald-300 dark:border-emerald-800 text-center">
-                                        <p class="text-[8px] sm:text-[9px] font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">GPA</p>
-                                        <p class="text-[10px] sm:text-xs font-bold text-emerald-900 dark:text-emerald-200">{{ student.overall_gpa }}</p>
-                                    </div>
-
-                                    <div class="px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg bg-gradient-to-br from-emerald-100 to-teal-100 dark:from-emerald-950/40 dark:to-teal-950/40 border-2 border-emerald-300 dark:border-emerald-800 text-center">
-                                        <p class="text-[8px] sm:text-[9px] font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">Grade</p>
-                                        <p class="text-[10px] sm:text-xs font-bold"
-                                           :class="student.has_fail ? 'text-red-700 dark:text-red-300' : 'text-emerald-900 dark:text-emerald-200'">
-                                            {{ student.overall_letter }}
-                                        </p>
-                                    </div>
-
-                                    <!-- ⭐ Reset Shift button (only if shifted) -->
-                                    <button
-                                        v-if="student.is_shifted"
-                                        @click="resetShift(student)"
-                                        class="inline-flex items-center gap-1 sm:gap-1.5 rounded-lg border-2 border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 px-2 sm:px-3 py-1.5 sm:py-2 text-[10px] sm:text-xs font-bold text-amber-700 dark:text-amber-300 shadow-sm transition-all hover:bg-amber-100 dark:hover:bg-amber-900/40 hover:border-amber-400 active:scale-95"
-                                        :title="`Remove shift record for ${student.student_name} (${student.shifted_to_year})`"
-                                    >
-                                        <svg class="w-3 h-3 sm:w-3.5 sm:h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                        </svg>
-                                        Reset
-                                    </button>
-
-                                    <button
-                                        @click="printResult(student)"
-                                        class="inline-flex items-center gap-1 sm:gap-1.5 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-600 px-2 sm:px-3 py-1.5 sm:py-2 text-[10px] sm:text-xs font-semibold text-white shadow-sm transition-all hover:from-emerald-600 hover:to-teal-700 active:scale-95"
-                                    >
-                                        <svg class="w-3 h-3 sm:w-3.5 sm:h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-                                        </svg>
-                                        Print
-                                    </button>
-                                </div>
-                            </div>
-
-                            <div class="overflow-x-auto">
-                                <table class="w-full border-collapse text-xs sm:text-sm min-w-[500px]">
-                                    <thead>
-                                        <tr class="bg-emerald-800 dark:bg-emerald-900 text-white">
-                                            <th class="border border-emerald-800 dark:border-emerald-900 px-2 sm:px-3 py-1.5 sm:py-2 text-left text-[9px] sm:text-[10px] font-bold uppercase tracking-wider">Subject</th>
-                                            <th class="border border-emerald-800 dark:border-emerald-900 px-2 sm:px-3 py-1.5 sm:py-2 text-center text-[9px] sm:text-[10px] font-bold uppercase tracking-wider">Total</th>
-                                            <th class="border border-emerald-800 dark:border-emerald-900 px-2 sm:px-3 py-1.5 sm:py-2 text-center text-[9px] sm:text-[10px] font-bold uppercase tracking-wider">Obtained</th>
-                                            <th class="border border-emerald-800 dark:border-emerald-900 px-2 sm:px-3 py-1.5 sm:py-2 text-center text-[9px] sm:text-[10px] font-bold uppercase tracking-wider">Highest</th>
-                                            <th class="border border-emerald-800 dark:border-emerald-900 px-2 sm:px-3 py-1.5 sm:py-2 text-center text-[9px] sm:text-[10px] font-bold uppercase tracking-wider">LG</th>
-                                            <th class="border border-emerald-800 dark:border-emerald-900 px-2 sm:px-3 py-1.5 sm:py-2 text-center text-[9px] sm:text-[10px] font-bold uppercase tracking-wider">GPA</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <tr
-                                            v-for="(sub, idx) in student.subjects"
-                                            :key="sub.subject"
-                                            :class="idx % 2 === 0 ? 'bg-white dark:bg-slate-900' : 'bg-emerald-50/30 dark:bg-emerald-950/20'"
-                                        >
-                                            <td class="border border-emerald-200 dark:border-emerald-800 px-2 sm:px-3 py-1.5 sm:py-2 text-xs font-semibold text-slate-800 dark:text-slate-100">{{ sub.subject }}</td>
-                                            <td class="border border-emerald-200 dark:border-emerald-800 px-2 sm:px-3 py-1.5 sm:py-2 text-center text-xs text-slate-600 dark:text-slate-400">100</td>
-                                            <td class="border border-emerald-200 dark:border-emerald-800 px-2 sm:px-3 py-1.5 sm:py-2 text-center text-xs font-bold text-slate-800 dark:text-slate-100">
-                                                {{ sub.marks ?? '—' }}
+                                <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
+                                    <template v-for="student in studentsList" :key="student.id">
+                                        <tr :class="isStudentSelected(student.id) ? 'bg-blue-50 dark:bg-blue-950/30' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'">
+                                            <td class="px-3 py-2.5">
+                                                <input
+                                                    type="checkbox"
+                                                    :checked="isStudentSelected(student.id)"
+                                                    :disabled="student.has_fail || student.is_shifted"
+                                                    :title="student.has_fail ? 'Failed — cannot be moved' : student.is_shifted ? `Already moved to ${student.shifted_to_class} (${student.shifted_to_year})` : 'Select to move to the next year'"
+                                                    @change="toggleStudent(student.id)"
+                                                    class="h-4 w-4 cursor-pointer rounded border-slate-300 text-blue-700 focus:ring-blue-600 disabled:cursor-not-allowed disabled:opacity-30"
+                                                />
                                             </td>
-                                            <td class="border border-emerald-200 dark:border-emerald-800 px-2 sm:px-3 py-1.5 sm:py-2 text-center text-xs text-slate-600 dark:text-slate-400">
-                                                {{ sub.highest ?? '—' }}
+                                            <td class="px-3 py-2.5 tabular-nums">{{ student.roll_number || '—' }}</td>
+                                            <td class="px-3 py-2.5">
+                                                <div class="flex items-center gap-3">
+                                                    <div class="flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-200 text-xs font-semibold text-slate-600 dark:bg-slate-700 dark:text-slate-200">
+                                                        <img v-if="student.student_photo" :src="'/storage/' + student.student_photo" :alt="student.student_name" class="h-full w-full object-cover" />
+                                                        <span v-else>{{ student.student_name?.charAt(0)?.toUpperCase() }}</span>
+                                                    </div>
+                                                    <div class="min-w-0">
+                                                        <p class="truncate font-semibold text-slate-900 dark:text-white">{{ student.student_name }}</p>
+                                                        <p class="font-mono text-xs text-slate-500 dark:text-slate-400">{{ student.student_id }}</p>
+                                                        <p v-if="student.is_shifted" class="text-xs font-medium text-amber-700 dark:text-amber-400">Moved to {{ student.shifted_to_class }} ({{ student.shifted_to_year }})</p>
+                                                    </div>
+                                                </div>
                                             </td>
-                                            <td class="border border-emerald-200 dark:border-emerald-800 px-2 sm:px-3 py-1.5 sm:py-2 text-center text-xs">
-                                                <span :class="['inline-block px-1.5 sm:px-2 py-0.5 rounded-md border text-[9px] sm:text-[10px] font-bold', getGradeBadgeClass(sub.grade)]">
-                                                    {{ sub.grade }}
-                                                </span>
+                                            <td class="px-3 py-2.5 text-right tabular-nums">{{ getStudentTotalMarks(student) }}</td>
+                                            <td class="px-3 py-2.5 text-right font-semibold tabular-nums">{{ student.overall_gpa }}</td>
+                                            <td class="px-3 py-2.5 text-center font-semibold" :class="student.has_fail ? 'text-red-700 dark:text-red-400' : ''">{{ student.overall_letter }}</td>
+                                            <td class="px-3 py-2.5 text-center tabular-nums">{{ getOrdinal(getStudentRank(student)) }}</td>
+                                            <td class="px-3 py-2.5 text-center">
+                                                <span
+                                                    class="inline-block rounded border px-2 py-0.5 text-xs font-semibold"
+                                                    :class="student.has_fail
+                                                        ? 'border-red-300 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300'
+                                                        : 'border-green-300 bg-green-50 text-green-800 dark:border-green-800 dark:bg-green-950/40 dark:text-green-300'"
+                                                >{{ student.has_fail ? 'Failed' : 'Passed' }}</span>
                                             </td>
-                                            <td class="border border-emerald-200 dark:border-emerald-800 px-2 sm:px-3 py-1.5 sm:py-2 text-center text-xs font-bold"
-                                                :class="sub.grade === 'F' ? 'text-red-600 dark:text-red-400' : 'text-slate-800 dark:text-slate-100'">
-                                                {{ sub.gpa !== null ? sub.gpa.toFixed(2) : '—' }}
+                                            <td class="px-3 py-2.5">
+                                                <div class="flex items-center justify-end gap-1.5">
+                                                    <button type="button" @click="toggleExpand(student.id)" class="rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">
+                                                        {{ isExpanded(student.id) ? 'Hide subjects' : 'Subjects' }}
+                                                    </button>
+                                                    <a :href="route('reports.marksheet.student', { student: student.id, exam_type: selectedExam })" target="_blank" rel="noopener" class="rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Marksheet</a>
+                                                    <button type="button" @click="printResult(student)" class="rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Print</button>
+                                                    <button v-if="student.is_shifted" type="button" @click="resetShift(student)" :title="`Remove the move record for ${student.student_name} (${student.shifted_to_year})`" class="rounded-md border border-amber-300 px-2.5 py-1 text-xs font-medium text-amber-800 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-300 dark:hover:bg-amber-950/30">Undo move</button>
+                                                </div>
                                             </td>
                                         </tr>
-                                    </tbody>
-                                </table>
-                            </div>
+
+                                        <tr v-if="isExpanded(student.id)">
+                                            <td colspan="9" class="bg-slate-50 px-4 py-3 dark:bg-slate-950/40">
+                                                <div class="overflow-x-auto">
+                                                    <table class="w-full min-w-[480px] border border-slate-200 bg-white text-xs dark:border-slate-700 dark:bg-slate-900">
+                                                        <thead class="bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                                                            <tr>
+                                                                <th class="border-b border-slate-200 px-3 py-1.5 text-left font-semibold dark:border-slate-700">Subject</th>
+                                                                <th class="border-b border-slate-200 px-3 py-1.5 text-right font-semibold dark:border-slate-700">Full marks</th>
+                                                                <th class="border-b border-slate-200 px-3 py-1.5 text-right font-semibold dark:border-slate-700">Obtained</th>
+                                                                <th class="border-b border-slate-200 px-3 py-1.5 text-right font-semibold dark:border-slate-700">Highest</th>
+                                                                <th class="border-b border-slate-200 px-3 py-1.5 text-center font-semibold dark:border-slate-700">Grade</th>
+                                                                <th class="border-b border-slate-200 px-3 py-1.5 text-right font-semibold dark:border-slate-700">Grade point</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody class="divide-y divide-slate-200 dark:divide-slate-700">
+                                                            <tr v-for="sub in student.subjects" :key="sub.subject">
+                                                                <td class="px-3 py-1.5 font-medium text-slate-800 dark:text-slate-100">{{ sub.subject }}</td>
+                                                                <td class="px-3 py-1.5 text-right tabular-nums text-slate-500">100</td>
+                                                                <td class="px-3 py-1.5 text-right font-semibold tabular-nums" :class="sub.grade === 'F' ? 'text-red-700 dark:text-red-400' : 'text-slate-900 dark:text-white'">{{ sub.marks ?? '—' }}</td>
+                                                                <td class="px-3 py-1.5 text-right tabular-nums text-slate-500">{{ sub.highest ?? '—' }}</td>
+                                                                <td class="px-3 py-1.5 text-center font-semibold" :class="sub.grade === 'F' ? 'text-red-700 dark:text-red-400' : ''">{{ sub.grade }}</td>
+                                                                <td class="px-3 py-1.5 text-right tabular-nums">{{ sub.gpa !== null ? sub.gpa.toFixed(2) : '—' }}</td>
+                                                            </tr>
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    </template>
+                                </tbody>
+                            </table>
                         </div>
 
                         <!-- Pagination -->
-                        <div v-if="students?.links && students.links.length > 3" class="mt-4 sm:mt-6 bg-white dark:bg-slate-900 rounded-2xl border border-emerald-200/60 dark:border-emerald-800/60 shadow-sm px-3 sm:px-6 py-3 sm:py-4 flex flex-col sm:flex-row items-center justify-between gap-3 transition-colors duration-300">
-                            <div class="text-xs sm:text-sm text-emerald-600 dark:text-emerald-400 text-center sm:text-left">
-                                Showing <span class="font-bold text-emerald-800 dark:text-emerald-200">{{ students.from ?? 0 }}</span> to
-                                <span class="font-bold text-emerald-800 dark:text-emerald-200">{{ students.to ?? 0 }}</span> of
-                                <span class="font-bold text-emerald-800 dark:text-emerald-200">{{ students.total ?? 0 }}</span> students
-                            </div>
-
-                            <div class="flex items-center gap-1 flex-wrap justify-center">
+                        <div v-if="students?.links && students.links.length > 3" class="flex flex-col items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 sm:flex-row dark:border-slate-800">
+                            <p class="text-sm text-slate-600 dark:text-slate-400">
+                                Showing <span class="font-semibold text-slate-900 dark:text-white">{{ students.from ?? 0 }}</span>–<span class="font-semibold text-slate-900 dark:text-white">{{ students.to ?? 0 }}</span>
+                                of <span class="font-semibold text-slate-900 dark:text-white">{{ students.total ?? 0 }}</span> students
+                            </p>
+                            <div class="flex flex-wrap items-center justify-center gap-1">
                                 <template v-for="(link, index) in students.links" :key="index">
-                                    <template v-if="link.url === null">
-                                        <span
-                                            class="px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium text-emerald-300 dark:text-emerald-700 bg-emerald-50 dark:bg-emerald-950/40 cursor-not-allowed"
-                                            v-html="link.label"
-                                        ></span>
-                                    </template>
-                                    <template v-else>
-                                        <Link
-                                            :href="link.url"
-                                            preserve-scroll
-                                            preserve-state
-                                            :class="[
-                                                'px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-all duration-200',
-                                                link.active
-                                                    ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-md shadow-emerald-500/25'
-                                                    : 'bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 hover:border-emerald-400'
-                                            ]"
-                                            v-html="link.label"
-                                        />
-                                    </template>
+                                    <span v-if="link.url === null" class="cursor-not-allowed rounded-md border border-slate-200 px-3 py-1.5 text-sm text-slate-300 dark:border-slate-800 dark:text-slate-600" v-html="link.label"></span>
+                                    <Link
+                                        v-else
+                                        :href="link.url"
+                                        preserve-scroll
+                                        preserve-state
+                                        :class="[
+                                            'rounded-md border px-3 py-1.5 text-sm font-medium',
+                                            link.active
+                                                ? 'border-blue-700 bg-blue-700 text-white'
+                                                : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800'
+                                        ]"
+                                        v-html="link.label"
+                                    />
                                 </template>
                             </div>
                         </div>
-                    </div>
+                    </section>
                 </template>
             </div>
         </div>

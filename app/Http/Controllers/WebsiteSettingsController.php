@@ -34,6 +34,7 @@ class WebsiteSettingsController extends Controller
             'short_description'  => 'nullable|string|max:1000',
             'school_logo'        => 'nullable|file|mimes:png,jpg,jpeg,webp,svg|max:2048',
             'favicon'            => 'nullable|file|mimes:png,svg,ico|max:1024',
+            'print_color'        => ['nullable', 'regex:/^#[0-9a-fA-F]{6}$/'],
 
             // Contact
             'phone'              => 'nullable|string|max:30',
@@ -55,6 +56,9 @@ class WebsiteSettingsController extends Controller
         ]);
 
         $settings = WebsiteSetting::current();
+
+        // a cleared colour goes back to the default
+        $validated['print_color'] = $validated['print_color'] ?? '#1f3a5f';
 
         // ✅ Handle School Logo Upload
         if ($request->hasFile('school_logo')) {

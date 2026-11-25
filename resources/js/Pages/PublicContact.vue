@@ -1,5 +1,5 @@
 <script setup>
-import { Head, Link, usePage } from '@inertiajs/vue3'
+import { Head, Link, router, usePage } from '@inertiajs/vue3'
 import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
 import PublicNavbar from '@/Components/PublicNavbar.vue'
 import PublicFooter from '@/Components/PublicFooter.vue'
@@ -106,11 +106,20 @@ const submit = () => {
 
     sending.value = true
 
-    setTimeout(() => {
-        sending.value = false
-        sent.value = true
-        form.value = { name: '', email: '', phone: '', subject: '', message: '' }
-    }, 900)
+    // Really send it: the message is stored and shows up in the admin "Messages" page.
+    router.post(route('contact.store'), { ...form.value }, {
+        preserveScroll: true,
+        onSuccess: () => {
+            sent.value = true
+            form.value = { name: '', email: '', phone: '', subject: '', message: '' }
+        },
+        onError: (errors) => {
+            errorMsg.value = Object.values(errors)[0] || 'Could not send your message. Please try again.'
+        },
+        onFinish: () => {
+            sending.value = false
+        },
+    })
 }
 
 // ============================================================
