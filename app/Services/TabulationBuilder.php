@@ -87,12 +87,16 @@ class TabulationBuilder
             ->map(fn ($rows) => $rows->pluck('marks', 'subject')->map(fn ($m) => (float) $m)->all());
 
         // ---- attendance -----------------------------------------------------------------
+        // holidays and closed days of the calendar count for nobody (weekly off days are left as recorded)
+        $span = Attendance::query()->where('class_id', $class->id)->where('academic_year', $year)->selectRaw('MIN(attendance_date) a, MAX(attendance_date) b')->first();
+        $closed = $span?->a ? app(AcademicCalendar::class)->holidayDays(substr((string) $span->a, 0, 10), substr((string) $span->b, 0, 10), $class->id) : [];
+
         $workingDays = (int) Attendance::query()
-            ->where('class_id', $class->id)->where('academic_year', $year)
+            ->where('class_id', $class->id)->where('academic_year', $year)->whereNotIn('attendance_date', $closed)
             ->distinct()->count('attendance_date');
 
         $attendance = Attendance::query()
-            ->where('class_id', $class->id)->where('academic_year', $year)
+            ->where('class_id', $class->id)->where('academic_year', $year)->whereNotIn('attendance_date', $closed)
             ->selectRaw("student_id, SUM(status IN ('present','late')) AS present, SUM(status = 'absent') AS absent, SUM(status = 'leave') AS on_leave")
             ->groupBy('student_id')
             ->get()

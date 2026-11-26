@@ -98,7 +98,7 @@ const shiftName = (id) => props.shifts.find((s) => s.id === id)?.name
                 <!-- working days -->
                 <section class="panel mb-5 p-4">
                     <h2 class="text-sm font-semibold">Working days</h2>
-                    <p class="mt-0.5 text-xs text-slate-500">Only these days appear in a routine.</p>
+                    <p class="mt-0.5 text-xs text-slate-500">Only these days appear in a routine. This is the same setting as the weekly off days of the Academic Calendar.</p>
                     <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2">
                         <label v-for="d in days" :key="d.id" class="inline-flex items-center gap-1.5 text-sm"><input v-model="workingDays" type="checkbox" :value="d.id" class="rounded border-slate-300 text-brand-700 focus:ring-brand-600" />{{ d.name }}</label>
                         <button type="button" class="btn btn-primary" :disabled="!workingDays.length" @click="saveDays">Save days</button>

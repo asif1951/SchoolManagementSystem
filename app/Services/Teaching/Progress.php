@@ -56,7 +56,7 @@ class Progress
         foreach ($plans as $plan) {
             $mine = $items[$plan->id] ?? collect();
             [$from, $to] = $this->calendar->session($plan->academic_year);
-            $days = $this->calendar->teachingDays($from, $to);
+            $days = $this->calendar->teachingDays($from, $to, $plan->class_id);
             $weight = 0;
             $done = 0.0;
             $expected = 0.0;
@@ -91,18 +91,23 @@ class Progress
                 default => 'red',
             };
 
+            // a calendar change clears this mark in the database while the model in hand still holds the old one
+            $plan->summary_on = null;
+            $plan->syncOriginalAttribute('summary_on');
+
             $plan->fill([
                 'chapters' => $mine->count(), 'delayed' => $delayed, 'planned_periods' => (int) $mine->sum('planned_periods'),
                 'done_pct' => $donePct, 'expected_pct' => $expectedPct, 'gap' => $health === 'none' ? 0 : $gap, 'health' => $health,
-                'projected_finish' => $this->projectedFinish($donePct, $firstStart, $last[$plan->id] ?? null, $today),
+                'projected_finish' => $this->projectedFinish($donePct, $firstStart, $last[$plan->id] ?? null, $today, $plan->class_id),
                 'last_log_on' => $last[$plan->id] ?? null, 'summary_on' => $today,
             ]);
+
+            $changed = $changed || count($plan->getDirty()) > 1;
 
             if ($plan->isDirty()) {
                 $plan->timestamps = false;
                 $plan->save();
                 $plan->timestamps = true;
-                $changed = true;
             }
         }
 
@@ -154,7 +159,7 @@ class Progress
         return $lo;
     }
 
-    private function projectedFinish(float $done, ?string $start, ?string $lastLog, string $today): ?string
+    private function projectedFinish(float $done, ?string $start, ?string $lastLog, string $today, int $classId): ?string
     {
         if ($done >= 100) {
             return $lastLog ?? $today;
@@ -164,7 +169,7 @@ class Progress
             return null;
         }
 
-        $elapsed = count($this->calendar->teachingDays($start, $today));
+        $elapsed = count($this->calendar->teachingDays($start, $today, $classId));
 
         if ($elapsed < 1) {
             return null;
@@ -176,7 +181,7 @@ class Progress
             return null;                               // so slow that a date would mean nothing
         }
 
-        $ahead = $this->calendar->teachingDays(Carbon::parse($today)->addDay()->toDateString(), Carbon::parse($today)->addDays(1000)->toDateString());
+        $ahead = $this->calendar->teachingDays(Carbon::parse($today)->addDay()->toDateString(), Carbon::parse($today)->addDays(1000)->toDateString(), $classId);
 
         return $ahead[$need - 1] ?? null;
     }

@@ -1,4 +1,5 @@
 <script setup>
+import CalendarStrip from '@/Components/Calendar/CalendarStrip.vue'
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue'
 import { Head, router } from '@inertiajs/vue3'
 import { ref, computed, watch } from 'vue'
@@ -532,6 +533,7 @@ const monthsElapsed = computed(() =>
 
             <!-- VIEW 1: CLASS LIST -->
             <template v-if="!classInfo">
+                <CalendarStrip types="fee_due" title="Fee due dates" class="mb-4" />
                 <div class="mb-4 sm:mb-6">
                     <div class="flex items-center gap-3 sm:gap-4">
                         <div class="p-2.5 sm:p-3 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl shadow-lg shadow-emerald-500/25 flex-shrink-0">

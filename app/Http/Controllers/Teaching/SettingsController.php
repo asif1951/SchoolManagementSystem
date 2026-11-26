@@ -3,10 +3,8 @@
 namespace App\Http\Controllers\Teaching;
 
 use App\Models\AuditLog;
-use App\Models\Teaching\Holiday;
 use App\Models\User;
 use App\Services\Teaching\Access;
-use App\Services\Teaching\Calendar;
 use App\Services\Teaching\Insights;
 use App\Services\Teaching\Settings;
 use Illuminate\Http\Request;
@@ -22,8 +20,6 @@ class SettingsController extends TeachingController
 
         return Inertia::render('Teaching/Settings', [
             'settings' => Settings::all(),
-            'holidays' => Holiday::where('ends_on', '>=', substr(Calendar::today(), 0, 4) . '-01-01')->orderBy('starts_on')->limit(200)->get()
-                ->map(fn ($h) => ['id' => $h->id, 'title' => $h->title, 'starts_on' => $h->starts_on->toDateString(), 'ends_on' => $h->ends_on->toDateString()]),
             // personal permissions on top of the role
             'abilities' => collect(config('abilities.groups.Teaching Plan'))->map(fn ($a, $key) => ['key' => $key, 'label' => $a['label']])->values(),
             'people' => User::where('role', '!=', User::ROLE_USER)->where('status', User::STATUS_ACTIVE)->orderBy('name')->limit(1000)->get(['id', 'name', 'role', 'extra_abilities'])
@@ -51,32 +47,6 @@ class SettingsController extends TeachingController
         Insights::touch();
 
         return back()->with('success', __('teaching.msg.settings_saved'));
-    }
-
-    public function holiday(Request $request, Calendar $calendar)
-    {
-        $this->need($request, 'teaching.settings');
-        $d = $request->validate(['title' => ['required', 'string', 'max:120'], 'starts_on' => ['required', 'date_format:Y-m-d'], 'ends_on' => ['required', 'date_format:Y-m-d', 'after_or_equal:starts_on']]);
-        Holiday::create($d);
-        $this->calendarChanged($d['starts_on']);
-
-        return back()->with('success', __('teaching.msg.holiday_saved'));
-    }
-
-    public function removeHoliday(Request $request, Holiday $holiday)
-    {
-        $this->need($request, 'teaching.settings');
-        $holiday->delete();
-        $this->calendarChanged($holiday->starts_on->toDateString());
-
-        return back()->with('success', __('teaching.msg.holiday_removed'));
-    }
-
-    /** the teaching days of that session changed: expected figures are worked out again */
-    private function calendarChanged(string $date): void
-    {
-        DB::table('teaching_plans')->where('academic_year', 'like', substr($date, 0, 4) . '%')->update(['summary_on' => null]);
-        Insights::touch();
     }
 
     public function grant(Request $request, User $user)

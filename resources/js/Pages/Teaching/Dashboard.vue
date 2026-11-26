@@ -1,5 +1,6 @@
 <script setup>
 /** The school at a glance (Head Teacher and Admin). Until the module is set up, the steps to do it come first. */
+import CalendarStrip from '@/Components/Calendar/CalendarStrip.vue'
 import Shell from '@/Components/Teaching/Shell.vue'
 import Bar from '@/Components/Teaching/Bar.vue'
 import Chip from '@/Components/Teaching/Chip.vue'
@@ -41,6 +42,8 @@ const nextStep = computed(() => props.setup.find((s) => !s.done)?.key)
             <div class="mb-1 flex justify-between"><h2 class="text-sm font-semibold">{{ t('dash.notices') }} ({{ unread.length }})</h2><button type="button" class="text-xs text-brand-700 underline" @click="read(null)">{{ t('dash.read_all') }}</button></div>
             <ul class="space-y-1 text-sm"><li v-for="n in unread" :key="n.id"><button type="button" class="text-left hover:underline" @click="openNotice(n)">{{ n.text }} <span class="text-xs text-slate-400">{{ n.at }}</span></button></li></ul>
         </section>
+
+        <CalendarStrip class="mb-4" />
 
         <template v-if="summary.plans">
             <Link v-if="summary.submitted" :href="route('teaching.plans', { session, status: 'submitted' })" class="mb-4 block rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">{{ t('dash.to_approve', { count: summary.submitted }) }} →</Link>

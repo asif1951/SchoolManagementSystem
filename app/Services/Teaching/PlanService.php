@@ -235,7 +235,7 @@ class PlanService
         $perWeek = $this->perWeek->for($plan->class_id, $plan->subject_id);
         $perDay = $perWeek / max(1, count(app(\App\Services\RoutineService::class)->workingDays()));
         [$from, $to] = $this->calendar->session($plan->academic_year);
-        $days = $this->calendar->teachingDays($from, $to);
+        $days = $this->calendar->teachingDays($from, $to, $plan->class_id);
         $dated = $items->filter(fn ($i) => $i->starts_on)->sortBy(fn ($i) => $i->starts_on->toDateString())->values();
 
         foreach ($dated as $k => $i) {

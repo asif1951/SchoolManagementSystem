@@ -3,7 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\SchoolClass;
-use App\Models\Teaching\Holiday;
+use App\Models\CalendarEvent;
 use App\Models\Teaching\LessonPlan;
 use App\Models\Teaching\SyllabusChapter;
 use App\Models\Teaching\TeachingLog;
@@ -23,7 +23,7 @@ class TeachingSeederTest extends TestCase
 
     private function counts(): array
     {
-        return array_map(fn ($t) => DB::table($t)->count(), ['users', 'classes', 'syllabus_chapters', 'teaching_plans', 'teaching_logs', 'lesson_plans', 'teaching_reviews', 'notifications', 'teaching_holidays', 'class_routine_slots']);
+        return array_map(fn ($t) => DB::table($t)->count(), ['users', 'classes', 'syllabus_chapters', 'teaching_plans', 'teaching_logs', 'lesson_plans', 'teaching_reviews', 'notifications', 'calendar_events', 'class_routine_slots']);
     }
 
     public function test_on_an_empty_school_it_fills_every_part_of_the_module(): void
@@ -34,7 +34,7 @@ class TeachingSeederTest extends TestCase
 
         $this->assertSame(3, SchoolClass::where('class_name', 'like', 'Demo%')->count());
         $this->assertSame(12, TeachingPlan::count());
-        $this->assertGreaterThanOrEqual(6, Holiday::count());
+        $this->assertGreaterThanOrEqual(6, CalendarEvent::where('type', 'holiday')->count());
         $this->assertTrue(SyllabusChapter::where('academic_year', '2027')->exists());
         $this->assertTrue(User::where('role', 'head_teacher')->exists());
 

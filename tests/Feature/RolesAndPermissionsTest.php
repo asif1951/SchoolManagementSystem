@@ -211,7 +211,7 @@ class RolesAndPermissionsTest extends TestCase
     public function test_the_browser_receives_the_users_abilities_for_menus(): void
     {
         $this->actingAs($this->makeUser(User::ROLE_CASHIER))->get('/fees')
-            ->assertInertia(fn ($page) => $page->where('auth.abilities', ['students.view', 'classes.view', 'fees.view', 'fees.collect']));
+            ->assertInertia(fn ($page) => $page->where('auth.abilities', ['students.view', 'classes.view', 'fees.view', 'fees.collect', 'calendar.view']));
     }
 
     public function test_each_role_lands_on_the_first_page_it_can_open(): void

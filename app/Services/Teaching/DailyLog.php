@@ -7,6 +7,7 @@ use App\Models\RoutinePeriod;
 use App\Models\Teaching\TeachingLog;
 use App\Models\Teaching\TeachingPlan;
 use App\Models\User;
+use App\Services\AcademicCalendar;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -47,22 +48,35 @@ class DailyLog
      */
     public function routineSlots(int $teacherId, string $date): Collection
     {
-        $day = Carbon::parse($date)->dayOfWeek;
+        // the weekdays that could run today: the usual one, or those a make-up day follows
+        $weekday = Carbon::parse($date)->dayOfWeek;
+        $days = collect($this->academic()->events($date, $date))->where('type', 'makeup')->pluck('follows_day')->filter(fn ($d) => $d !== null)->push($weekday)->unique();
         $year = substr($date, 0, 4);
+        $out = collect();
 
-        $draft = DB::table('class_routine_slots as s')->join('class_routines as r', 'r.id', '=', 's.class_routine_id')->join('classes as c', 'c.id', '=', 'r.class_id')
-            ->where('s.teacher_id', $teacherId)->where('s.day', $day)->whereNull('r.published_slots')->whereNotNull('s.subject_id')->where('c.academic_year', 'like', "{$year}%")
-            ->get(['r.class_id', 's.subject_id', 's.period_id'])
-            ->map(fn ($s) => ['class_id' => (int) $s->class_id, 'subject_id' => (int) $s->subject_id, 'period_id' => (int) $s->period_id]);
+        foreach ($days as $day) {
+            $draft = DB::table('class_routine_slots as s')->join('class_routines as r', 'r.id', '=', 's.class_routine_id')->join('classes as c', 'c.id', '=', 'r.class_id')
+                ->where('s.teacher_id', $teacherId)->where('s.day', $day)->whereNull('r.published_slots')->whereNotNull('s.subject_id')->where('c.academic_year', 'like', "{$year}%")
+                ->get(['r.class_id', 's.subject_id', 's.period_id'])
+                ->map(fn ($s) => ['class_id' => (int) $s->class_id, 'subject_id' => (int) $s->subject_id, 'period_id' => (int) $s->period_id]);
 
-        $published = DB::table('class_routines as r')->join('classes as c', 'c.id', '=', 'r.class_id')->where('c.academic_year', 'like', "{$year}%")
-            ->whereNotNull('r.published_slots')->whereRaw("JSON_CONTAINS(r.published_slots, JSON_OBJECT('teacher_id', ?, 'day', ?))", [$teacherId, $day])
-            ->get(['r.class_id', 'r.published_slots'])
-            ->flatMap(fn ($r) => collect(json_decode($r->published_slots, true))
-                ->filter(fn ($s) => (int) ($s['teacher_id'] ?? 0) === $teacherId && (int) $s['day'] === $day && ! empty($s['subject_id']))
-                ->map(fn ($s) => ['class_id' => (int) $r->class_id, 'subject_id' => (int) $s['subject_id'], 'period_id' => (int) $s['period_id']]));
+            $published = DB::table('class_routines as r')->join('classes as c', 'c.id', '=', 'r.class_id')->where('c.academic_year', 'like', "{$year}%")
+                ->whereNotNull('r.published_slots')->whereRaw("JSON_CONTAINS(r.published_slots, JSON_OBJECT('teacher_id', ?, 'day', ?))", [$teacherId, (int) $day])
+                ->get(['r.class_id', 'r.published_slots'])
+                ->flatMap(fn ($r) => collect(json_decode($r->published_slots, true))
+                    ->filter(fn ($s) => (int) ($s['teacher_id'] ?? 0) === $teacherId && (int) $s['day'] === (int) $day && ! empty($s['subject_id']))
+                    ->map(fn ($s) => ['class_id' => (int) $r->class_id, 'subject_id' => (int) $s['subject_id'], 'period_id' => (int) $s['period_id']]));
 
-        return $draft->concat($published)->values();
+            // only the classes that are open and run this weekday's routine today
+            $out = $out->concat($draft->concat($published)->filter(fn ($s) => $this->academic()->routineDay($date, $s['class_id']) === (int) $day));
+        }
+
+        return $out->values();
+    }
+
+    private function academic(): AcademicCalendar
+    {
+        return app(AcademicCalendar::class);
     }
 
     /**
@@ -227,6 +241,10 @@ class DailyLog
             $mine = $periodId
                 ? $this->routineSlots($teacherId, $date)->contains(fn ($s) => $s['class_id'] === $classId && $s['subject_id'] === $subjectId && $s['period_id'] === (int) $periodId)
                 : TeachingPlan::where(['teacher_id' => $teacherId, 'class_id' => $classId, 'subject_id' => $subjectId])->exists() || $this->rows->assigned($teacherId, $classId, $subjectId);
+
+            if ($periodId && ! $this->academic()->isWorkingDay($date, $classId)) {
+                $this->fail('school_closed', ['reason' => $this->academic()->day($date, $classId)['reason']]);
+            }
 
             if (! $mine && ! $user->canDo('teaching.manage_all')) {
                 $this->fail('not_your_class');

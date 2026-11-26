@@ -52,6 +52,12 @@ return [
             'routine.manage' => ['label' => 'Make, edit and publish routines; set periods and working days',                   'scoped' => false],
         ],
 
+        'Academic Calendar' => [
+            'calendar.view'   => ['label' => 'See the academic calendar',                                   'scoped' => false],
+            'calendar.manage' => ['label' => 'Add and change dates, weekly off days and term dates',        'scoped' => false],
+            'calendar.close'  => ['label' => 'Declare an emergency closure and make-up days',               'scoped' => false],
+        ],
+
         'Teaching Plan' => [
             'teaching.own'        => ['label' => 'Own teaching plans, daily log and lesson plans',              'scoped' => false],
             'teaching.view_all'   => ['label' => "See every teacher's plans, logs, progress and reports",       'scoped' => false],
@@ -136,6 +142,7 @@ return [
                 'fees.view_dues:own',
                 'routine.view',
                 'teaching.own',
+                'calendar.view',
             ],
         ],
 
@@ -145,6 +152,7 @@ return [
             'abilities' => [
                 'teaching.own', 'teaching.view_all', 'teaching.approve', 'teaching.review', 'teaching.syllabus', 'teaching.edit_past',
                 'classes.view', 'students.view', 'routine.view',
+                'calendar.view', 'calendar.manage', 'calendar.close',
             ],
         ],
 

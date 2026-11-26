@@ -1,4 +1,5 @@
 <script setup>
+import CalendarStrip from '@/Components/Calendar/CalendarStrip.vue'
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue'
 import { Head, Link, usePage, router } from '@inertiajs/vue3'
 import { computed, ref, watch } from 'vue'
@@ -402,6 +403,8 @@ const activityColors = {
                         </div>
                     </div>
                 </div>
+
+                <CalendarStrip title="Coming up in the school calendar" />
 
                 <!-- ==================== STAT CARDS (6) ==================== -->
                 <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-6 gap-2.5 sm:gap-3 lg:gap-4">

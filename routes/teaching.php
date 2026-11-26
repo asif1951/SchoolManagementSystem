@@ -42,8 +42,6 @@ Route::prefix('teaching')->name('teaching.')->group(function () {
     Route::prefix('settings')->name('settings')->controller(SettingsController::class)->group(function () {
         Route::get('/', 'index');
         Route::put('/', 'save')->name('.save');
-        Route::post('/holidays', 'holiday')->name('.holidays');
-        Route::delete('/holidays/{holiday}', 'removeHoliday')->name('.holidays.destroy');
         Route::put('/people/{user}', 'grant')->name('.grant');
     });
 

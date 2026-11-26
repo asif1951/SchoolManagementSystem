@@ -52,7 +52,7 @@ class DashboardController extends TeachingController
         return [
             $step('teachers', DB::table('class_subject_teachers')->whereNull('ends_on')->whereIn('class_id', $classes)->exists(), "/subject-teachers?year={$year}", $user->canDo('classes.manage')),
             $step('routine', DB::table('class_routine_slots as s')->join('class_routines as r', 'r.id', '=', 's.class_routine_id')->whereIn('r.class_id', $classes)->exists(), '/routine', $user->canDo('routine.manage')),
-            $step('holidays', DB::table('teaching_holidays')->where('ends_on', '>=', substr($year, 0, 4) . '-01-01')->exists(), '/teaching/settings', $user->canDo('teaching.settings')),
+            $step('holidays', DB::table('calendar_events')->where('off', true)->where(fn ($q) => $q->where('ends_on', '>=', substr($year, 0, 4) . '-01-01')->orWhere('repeat', '!=', 'none'))->exists(), '/calendar', $user->canDo('calendar.manage')),
             $step('syllabus', DB::table('syllabus_chapters')->whereNull('deleted_at')->where('academic_year', '<=', $year)->exists(), '/teaching/syllabus', $user->canDo('teaching.syllabus')),
             $step('plans', DB::table('teaching_plans')->where('academic_year', $year)->exists(), '/teaching/plans', true),
             $step('logs', DB::table('teaching_logs')->where('log_date', '>=', substr($year, 0, 4) . '-01-01')->exists(), '/teaching/log', true),

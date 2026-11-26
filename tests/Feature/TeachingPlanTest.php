@@ -4,7 +4,6 @@ namespace Tests\Feature;
 
 use App\Models\AuditLog;
 use App\Models\Exam;
-use App\Models\Teaching\Holiday;
 use App\Models\Teaching\TeachingPlan;
 use App\Services\Teaching\Calendar;
 use App\Services\Teaching\PlanService;
@@ -55,7 +54,7 @@ class TeachingPlanTest extends TestCase
 
     public function test_auto_schedule_uses_only_teaching_days_in_order_and_by_periods(): void
     {
-        Holiday::create(['starts_on' => '2026-01-04', 'ends_on' => '2026-01-08', 'title' => 'Winter']);          // a whole week
+        \App\Models\CalendarEvent::create(['type' => 'holiday', 'off' => true, 'starts_on' => '2026-01-04', 'ends_on' => '2026-01-08', 'title' => 'Winter']);          // a whole week
         Exam::create(['academic_year' => '2026', 'name' => 'Half yearly', 'weight' => 100, 'starts_on' => '2026-06-07', 'ends_on' => '2026-06-18', 'status' => 'draft', 'sort_order' => 1]);
         $plan = $this->plan();
 

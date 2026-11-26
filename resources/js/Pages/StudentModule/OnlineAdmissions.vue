@@ -1,4 +1,5 @@
 <script setup>
+import CalendarStrip from '@/Components/Calendar/CalendarStrip.vue'
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue'
 import LanguageSwitch from '@/Components/StudentModule/LanguageSwitch.vue'
 import { Head, Link, router } from '@inertiajs/vue3'
@@ -55,6 +56,7 @@ const label = 'mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400
                     <h1 class="text-xl font-semibold text-slate-900 dark:text-white">{{ t('oa_title') }}</h1>
                     <LanguageSwitch />
                 </header>
+                <CalendarStrip types="admission" title="Admission periods" class="mb-4" />
 
                 <div v-if="flash.success" class="mb-4 rounded-md border border-l-4 border-slate-200 border-l-green-600 bg-white px-4 py-3 text-sm dark:border-slate-700 dark:border-l-green-500 dark:bg-slate-900" role="status">{{ flash.success }}</div>
                 <div v-if="errors.duplicate || flash.error || errors.class_id || errors.override_reason" class="mb-4 rounded-md border border-l-4 border-slate-200 border-l-red-600 bg-white px-4 py-3 text-sm dark:border-slate-700 dark:border-l-red-500 dark:bg-slate-900" role="alert">

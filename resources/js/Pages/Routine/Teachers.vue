@@ -1,4 +1,5 @@
 <script setup>
+import CalendarStrip from '@/Components/Calendar/CalendarStrip.vue'
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue'
 import { Head, Link, router } from '@inertiajs/vue3'
 import { computed, ref, watch } from 'vue'
@@ -39,6 +40,8 @@ const printUrl = computed(() => (props.grid?.teacher ? route('routine.teachers.p
                     </div>
                     <a v-if="printUrl" :href="printUrl" target="_blank" rel="noopener" class="btn">Print</a>
                 </header>
+
+                <CalendarStrip today-only />
 
                 <section class="panel mb-4 p-4">
                     <div class="grid grid-cols-1 gap-3 sm:grid-cols-4">

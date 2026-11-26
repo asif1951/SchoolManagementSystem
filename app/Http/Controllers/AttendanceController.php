@@ -252,6 +252,7 @@ class AttendanceController extends Controller
             $attendanceStats = Attendance::query()
                 ->whereIn('student_id', $studentIds)
                 ->where('academic_year', $class->academic_year)
+                ->whereNotIn('attendance_date', $this->closedDates($class, $studentIds))
                 ->selectRaw("
                     student_id,
                     COUNT(*) as total_days,
@@ -347,6 +348,7 @@ class AttendanceController extends Controller
             'students' => $studentsPaginated,
             'summary' => $summary,
             'selectedDate' => $date,
+            'schoolDay' => app(\App\Services\AcademicCalendar::class)->day(\Illuminate\Support\Carbon::parse($date)->toDateString(), $class->id),
             'isAdmin' => $isAdmin,
             'availableYears' => SchoolClass::query()
                 ->where('status', 'active')
@@ -395,6 +397,14 @@ class AttendanceController extends Controller
 
         if ($validCount !== $submittedIds->count()) {
             return back()->with('error', 'One or more students do not belong to this class.');
+        }
+
+        // there is no attendance on a holiday or during a closure
+        $calendar = app(\App\Services\AcademicCalendar::class);
+        $state = $calendar->day(\Illuminate\Support\Carbon::parse($validated['date'])->toDateString(), $class->id);
+
+        if (! $state['working'] && $state['type'] !== 'weekly') {
+            return back()->with('error', "No school on that day ({$state['reason']}): attendance is not taken.");
         }
 
         // One bulk upsert instead of one query per student.
@@ -497,6 +507,7 @@ class AttendanceController extends Controller
                 ->whereIn('student_id', $studentIds)
                 ->whereDate('attendance_date', '>=', $from)
                 ->whereDate('attendance_date', '<=', $to)
+                ->whereNotIn('attendance_date', app(\App\Services\AcademicCalendar::class)->holidayDays($from, $to, $class->id))
                 ->orderBy('attendance_date')
                 ->get()
                 ->groupBy('student_id');
@@ -581,6 +592,14 @@ class AttendanceController extends Controller
             'summary' => $summary,
             'students' => $data->values(),
         ]);
+    }
+
+    /** the holidays and closed days between the first and last attendance on record for these students */
+    private function closedDates(SchoolClass $class, array $studentIds): array
+    {
+        $span = Attendance::whereIn('student_id', $studentIds)->where('academic_year', $class->academic_year)->selectRaw('MIN(attendance_date) a, MAX(attendance_date) b')->first();
+
+        return $span?->a ? app(\App\Services\AcademicCalendar::class)->holidayDays(substr((string) $span->a, 0, 10), substr((string) $span->b, 0, 10), $class->id) : [];
     }
 
     /**

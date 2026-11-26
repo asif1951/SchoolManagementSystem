@@ -1,4 +1,5 @@
 <script setup>
+import CalendarStrip from '@/Components/Calendar/CalendarStrip.vue'
 import Shell from '@/Components/Teaching/Shell.vue'
 import LogCard from '@/Components/Teaching/LogCard.vue'
 import Dialog from '@/Components/Teaching/Dialog.vue'
@@ -106,6 +107,8 @@ const addExtra = (e) => {
         <div class="space-y-3">
             <LogCard v-for="c in list" :key="`${version}-${c.key}`" :card="c" :date="date" :items="c.plan ? opts[c.plan.id] || [] : []" :teachers="teachers" :disabled="!canWrite" :siblings="siblings(c)" @saved="saved" @removed="removed" @copied="copied" />
         </div>
+
+        <CalendarStrip class="mt-4" />
 
         <section v-if="todo?.behind.length" class="panel mt-4 p-4">
             <h2 class="text-sm font-semibold">{{ t('now.behind') }}</h2>

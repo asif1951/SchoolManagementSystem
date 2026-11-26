@@ -26,7 +26,7 @@ class Scheduler
         [$start, $end] = $this->calendar->session($plan->academic_year);
         $from = max($from ?: $start, $start);
         $to = min($to ?: $end, $end);
-        $days = $this->calendar->teachingDays($from, $to);
+        $days = $this->calendar->teachingDays($from, $to, $plan->class_id);
         $items = $plan->items()->get();
 
         // chapters already finished keep their dates: only the rest is spread

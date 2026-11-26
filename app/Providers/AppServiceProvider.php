@@ -15,7 +15,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // one calendar per request, so its days are worked out once
+        $this->app->scoped(\App\Services\AcademicCalendar::class);
+        $this->app->scoped(\App\Services\Teaching\Calendar::class);
     }
 
     /**

@@ -2,9 +2,9 @@
 
 namespace Database\Seeders;
 
+use App\Models\CalendarEvent;
 use App\Models\SchoolClass;
 use App\Models\Subject;
-use App\Models\Teaching\Holiday;
 use App\Models\Teaching\LessonPlan;
 use App\Models\Teaching\SyllabusChapter;
 use App\Models\Teaching\TeachingLog;
@@ -80,7 +80,7 @@ class TeachingPlanDemoSeeder extends Seeder
     {
         foreach ([['02-21', '02-21', 'International Mother Language Day'], ['03-26', '03-26', 'Independence Day'], ['04-14', '04-14', 'Pohela Boishakh'],
                   ['05-01', '05-01', 'May Day'], ['06-14', '06-25', 'Summer vacation'], ['12-16', '12-16', 'Victory Day']] as [$a, $b, $title]) {
-            Holiday::firstOrCreate(['starts_on' => "{$year}-{$a}", 'ends_on' => "{$year}-{$b}"], ['title' => $title]);
+            CalendarEvent::firstOrCreate(['type' => 'holiday', 'starts_on' => "{$year}-{$a}", 'ends_on' => "{$year}-{$b}"], ['title' => $title, 'off' => true]);
         }
     }
 

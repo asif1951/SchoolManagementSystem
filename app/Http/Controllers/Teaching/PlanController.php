@@ -97,7 +97,7 @@ class PlanController extends TeachingController
                 'starts_on' => $i->starts_on?->toDateString(), 'ends_on' => $i->ends_on?->toDateString(), 'planned_periods' => $i->planned_periods,
                 'progress' => $i->progress, 'status' => $i->statusOn($today), 'completed' => $i->completed_on !== null])->values(),
             'warnings' => $this->plans->warnings($plan, $items),
-            'session' => ['from' => $from, 'to' => $to, 'today' => $today, 'closed' => $this->calendar->closedRanges($from, $to)],
+            'session' => ['from' => $from, 'to' => $to, 'today' => $today, 'closed' => $this->calendar->closedRanges($from, $to, $plan->class_id)],
             'perWeek' => $perWeek->for($plan->class_id, $plan->subject_id),
             'reviews' => $plan->reviews()->with('author:id,name')->limit(30)->get()->map(fn ($r) => ['id' => $r->id, 'kind' => $r->kind, 'body' => $r->body, 'by' => $r->author?->name, 'at' => $r->created_at->format('d M Y, h:i A')]),
             // where this plan can be copied to, or filled from

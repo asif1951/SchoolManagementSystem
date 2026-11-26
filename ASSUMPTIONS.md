@@ -87,3 +87,15 @@ Each one is a deliberate choice; change it here first if you want it different.
 55. **Notifications** are inside the system (shown on the Teaching dashboard); no email or SMS.
 56. **PDF** is the browser's "Save as PDF" from the print pages, as in the rest of the system.
 
+## Academic Calendar module
+
+57. **One source of dates.** The Teaching Plan's holiday list was moved into the calendar and its table removed. Exam dates are the same data in both places (an exam with dates has a calendar entry; changing either changes the other). Weekly off days are the routine's "working days" setting.
+58. **Bangla calendar.** The 2019 revised Bangladesh Bangabda: 1 Boishakh = 14 April; Boishakh to Ashwin 31 days, Kartik to Magh 30, Falgun 29 (30 in a leap year), Chaitra 30. Dates are stored only as Gregorian.
+59. **Which days are closed.** Holiday, vacation and emergency closure close the school for their audience; school event, meeting and "other" only when ticked; teachers-only entries never close classes. A closing entry beats a make-up day. Exam days are working days without ordinary teaching.
+60. **Attendance.** Cannot be saved on a holiday or closure, and records already on such days are not counted (percentages, reports, marksheet). On weekly off days it only warns and records stay counted, so changing the off-day setting never rewrites old attendance.
+61. **Yearly events** repeat by English or Bangla date; one year can be changed or removed on its own. They cannot be for chosen classes (classes change yearly) and exams, closures and make-up days do not repeat.
+62. **Emergency closure** updates routine-based daily logs, attendance and teaching-plan expectations at once. Chapter dates move only if "spread unfinished chapters again" is ticked. A make-up day follows the routine of the first lost day unless chosen otherwise.
+63. **Copy last year** copies single entries by the same English date (marked tentative unless unticked), skips class-only, closure, make-up and exam entries, and never duplicates.
+64. **Permissions.** calendar.view (all staff roles), calendar.manage and calendar.close (Admin and Head Teacher). Fee due dates and admission periods are calendar entries shown on the fee and online-admission screens; they do not change fee or admission rules.
+65. **Language.** The calendar screens are in English with Bangla dates and Bangla event titles; the printed calendar can be English, Bangla or both. Today is Asia/Dhaka.
+

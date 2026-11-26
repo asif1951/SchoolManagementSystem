@@ -2,23 +2,17 @@
 
 namespace App\Services\Teaching;
 
-use App\Models\Exam;
-use App\Models\Teaching\Holiday;
-use App\Services\RoutineService;
+use App\Services\AcademicCalendar;
 use Illuminate\Support\Carbon;
 
 /**
- * Which days teaching happens: the routine's working days, minus holidays, minus exam days.
+ * Teaching days, as the Academic Calendar gives them (working days without exam days).
  * Dates are plain 'Y-m-d' strings, which compare correctly and cost nothing.
  */
 class Calendar
 {
     /** @var array<string,array<int,string>> */
     private array $cache = [];
-
-    public function __construct(private RoutineService $routines)
-    {
-    }
 
     /** today in the school's own time zone */
     public static function today(): string
@@ -34,52 +28,24 @@ class Calendar
         return ["{$y}-01-01", "{$y}-12-31"];
     }
 
-    /** @return array<int,string> every teaching day between the two dates, in order */
-    public function teachingDays(string $from, string $to): array
+    /** @return array<int,string> every teaching day between the two dates (for one class, or the school) */
+    public function teachingDays(string $from, string $to, ?int $classId = null): array
     {
-        $key = "{$from}|{$to}";
-
-        if (isset($this->cache[$key])) {
-            return $this->cache[$key];
-        }
-
-        if ($to < $from || Carbon::parse($from)->diffInDays($to) > 1100) {
-            return [];
-        }
-
-        $working = array_flip($this->routines->workingDays());
-        $closed = $this->closedRanges($from, $to);
-        $days = [];
-
-        for ($d = Carbon::parse($from); ($s = $d->toDateString()) <= $to; $d->addDay()) {
-            if (! isset($working[$d->dayOfWeek])) {
-                continue;
-            }
-
-            foreach ($closed as [$a, $b]) {
-                if ($s >= $a && $s <= $b) {
-                    continue 2;
-                }
-            }
-
-            $days[] = $s;
-        }
-
-        return $this->cache[$key] = $days;
+        return $this->cache["{$from}|{$to}|{$classId}"] ??= $this->academic()->teachingDays($from, $to, $classId);
     }
 
-    /** holidays and exams that overlap the range: [[from, to, title, kind]] */
-    public function closedRanges(string $from, string $to): array
+    /** holidays, closures and exams that overlap the range and concern the school or this class: [[from, to, title, kind]] */
+    public function closedRanges(string $from, string $to, ?int $classId = null): array
     {
-        $out = Holiday::where('starts_on', '<=', $to)->where('ends_on', '>=', $from)->orderBy('starts_on')->get()
-            ->map(fn ($h) => [$h->starts_on->toDateString(), $h->ends_on->toDateString(), $h->title, 'holiday'])->all();
+        return collect($this->academic()->events($from, $to))
+            ->filter(fn ($e) => ($e['off'] || $e['type'] === 'exam') && ($e['audience'] === 'all' || ($classId && in_array($classId, $e['class_ids'], true))))
+            ->map(fn ($e) => [$e['starts_on'], $e['ends_on'], $e['title'], $e['type'] === 'exam' ? 'exam' : 'holiday'])->values()->all();
+    }
 
-        foreach (Exam::whereNotNull('starts_on')->where('starts_on', '<=', $to)->get(['name', 'starts_on', 'ends_on']) as $e) {
-            $end = ($e->ends_on ?? $e->starts_on)->toDateString();
-            $end >= $from && $out[] = [$e->starts_on->toDateString(), $end, $e->name, 'exam'];
-        }
-
-        return $out;
+    /** asked for when needed: the calendar tells this class to forget when dates change */
+    private function academic(): AcademicCalendar
+    {
+        return app(AcademicCalendar::class);
     }
 
     public function forget(): void

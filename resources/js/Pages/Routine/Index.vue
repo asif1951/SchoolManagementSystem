@@ -1,4 +1,5 @@
 <script setup>
+import CalendarStrip from '@/Components/Calendar/CalendarStrip.vue'
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue'
 import { Head, Link, router } from '@inertiajs/vue3'
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
@@ -58,6 +59,8 @@ const badge = {
 
                 <div v-if="flash.success" class="mb-4 rounded-md border border-l-4 border-slate-200 border-l-green-600 bg-white px-4 py-3 text-sm dark:border-slate-700 dark:bg-slate-900" role="status">{{ flash.success }}</div>
                 <div v-if="flash.error" class="mb-4 rounded-md border border-l-4 border-slate-200 border-l-red-600 bg-white px-4 py-3 text-sm dark:border-slate-700 dark:bg-slate-900" role="alert">{{ flash.error }}</div>
+
+                <CalendarStrip today-only />
 
                 <section v-if="clashes.length" class="mb-3 rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900" role="alert">
                     <p class="font-semibold">{{ clashes.length }} {{ clashes.length === 1 ? 'teacher is' : 'teachers are' }} in two classes at the same time</p>

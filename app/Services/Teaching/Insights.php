@@ -142,10 +142,11 @@ class Insights
             return [];
         }
 
-        $days = $this->calendar->teachingDays($from, $to);
+        // every date: a class may be open (a make-up day) when the school normally is not
+        $days = [];
 
-        if (! $days) {
-            return [];
+        for ($d = Carbon::parse($from); $d->toDateString() <= $to; $d->addDay()) {
+            $days[] = $d->toDateString();
         }
 
         $slots = $this->weekSlots(substr($from, 0, 4));
@@ -155,12 +156,32 @@ class Insights
 
         $out = [];
 
-        foreach (array_reverse($days) as $date) {
-            foreach ($slots[Carbon::parse($date)->dayOfWeek] ?? [] as $teacher => $classes) {
-                if ($teacherId && (int) $teacher !== $teacherId) {
-                    continue;
-                }
+        $calendar = app(\App\Services\AcademicCalendar::class);
 
+        foreach (array_reverse($days) as $date) {
+            $weekday = Carbon::parse($date)->dayOfWeek;
+            $candidates = collect($calendar->events($date, $date))->where('type', 'makeup')->pluck('follows_day')->filter(fn ($d) => $d !== null)->push($weekday)->unique();
+            $due = [];
+            $follows = [];                              // class id => the weekday whose routine it runs today (null: none)
+
+            foreach ($candidates as $day) {
+                foreach ($slots[$day] ?? [] as $teacher => $classes) {
+                    if ($teacherId && (int) $teacher !== $teacherId) {
+                        continue;
+                    }
+
+                    foreach ($classes as $c) {
+                        if (! array_key_exists($c[0], $follows)) {
+                            $state = $calendar->day($date, $c[0]);
+                            $follows[$c[0]] = $state['exam'] ? null : $state['routine_day'];       // nothing is due on exam days
+                        }
+
+                        $follows[$c[0]] === (int) $day && $due[$teacher][] = $c;
+                    }
+                }
+            }
+
+            foreach ($due as $teacher => $classes) {
                 $missing = count(array_filter($classes, fn ($c) => ! isset($logged["{$date}|{$c[0]}|{$c[1]}"])));
 
                 $missing && $out[] = ['date' => $date, 'teacher_id' => (int) $teacher, 'missing' => $missing, 'due' => count($classes)];

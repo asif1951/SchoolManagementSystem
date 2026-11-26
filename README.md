@@ -119,3 +119,17 @@ Demo data (adds to the current school, safe to repeat): `php artisan db:seed --c
 
 Tests: `php artisan test --filter=Teaching`
 
+## Academic Calendar
+
+Every date of the school year in one place (menu: **Academic Calendar**), in the English and Bangla calendars. Holidays,
+closures and make-up days are followed by the routine's daily log, attendance and the Teaching Plan; exam dates are shared
+with the Exams module.
+
+Setting it up: `php artisan migrate --force` (moves existing teaching holidays and exam dates into the calendar), upload
+`public/build`, then set the weekly off days and add the year's holidays (type, paste or upload them).
+
+Other code asks `App\Services\AcademicCalendar`: `isWorkingDay()`, `workingDays()`, `countWorkingDays()`, `teachingDays()`,
+`routineDay()`, `eventsFor($user, $from, $to)`.
+
+Tests: `php artisan test --filter=AcademicCalendar`
+

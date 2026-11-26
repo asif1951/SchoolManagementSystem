@@ -299,6 +299,25 @@ Route::middleware(['auth', 'verified', 'active'])->group(function () {
         Route::delete('/student-results/reset-shift/{recordId}', [StudentResultController::class, 'resetShift'])->name('student.results.reset-shift');
     });
 
+    // ACADEMIC CALENDAR (who may do what is checked in the controller)
+    Route::prefix('calendar')->name('calendar.')->controller(\App\Http\Controllers\CalendarController::class)->group(function () {
+        Route::get('/', 'index')->name('index');
+        Route::get('/upcoming', 'upcoming')->name('upcoming');
+        Route::get('/print', 'print')->middleware('throttle:30,1')->name('print');
+        Route::post('/events', 'store')->name('events.store');
+        Route::put('/events/{event}', 'update')->name('events.update');
+        Route::delete('/events/{event}', 'destroy')->name('events.destroy');
+        Route::post('/events/{event}/move', 'move')->name('events.move');
+        Route::post('/events/{event}/confirm', 'confirm')->name('events.confirm');
+        Route::post('/bulk/preview', 'bulkPreview')->middleware('throttle:30,1')->name('bulk.preview');
+        Route::post('/bulk', 'bulkStore')->middleware('throttle:20,1')->name('bulk.store');
+        Route::get('/bulk/template', 'template')->name('bulk.template');
+        Route::post('/copy/preview', 'copyPreview')->middleware('throttle:30,1')->name('copy.preview');
+        Route::post('/copy', 'copyStore')->middleware('throttle:10,1')->name('copy.store');
+        Route::post('/closure', 'closeSchool')->middleware('throttle:20,1')->name('closure');
+        Route::put('/off-days', 'offDays')->name('off-days');
+    });
+
     // TEACHING PLAN (syllabus, yearly plans, daily log, progress)
     require __DIR__ . '/teaching.php';
 

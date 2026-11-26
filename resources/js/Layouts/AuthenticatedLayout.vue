@@ -134,6 +134,7 @@ const navigation = [
             { name: 'Periods & Days', icon: 'classes', route: '/routine/periods', ability: 'routine.manage' },
         ]
     },
+    { name: 'Academic Calendar', icon: 'attendance', route: '/calendar', ability: ['calendar.view', 'calendar.manage', 'calendar.close'] },
     {
         name: 'Teaching Plan',
         icon: 'results',

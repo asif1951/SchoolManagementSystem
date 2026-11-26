@@ -97,7 +97,7 @@ class TeachingDashboardTest extends TestCase
     public function test_the_setup_checklist_shows_what_is_left(): void
     {
         $this->actingAs($this->head)->get(route('teaching.dashboard', ['session' => '2026']))->assertInertia(fn (Assert $p) => $p
-            ->has('setup', 6)->where('setup.0.done', true)->where('setup.2.key', 'holidays')->where('setup.2.done', false)->where('setup.2.url', null)      // the head cannot change settings
+            ->has('setup', 6)->where('setup.0.done', true)->where('setup.2.key', 'holidays')->where('setup.2.done', false)->where('setup.2.url', '/calendar')      // the head teacher keeps the calendar
             ->where('setup.3.done', true)->where('setup.3.url', '/teaching/syllabus'));
     }
 
@@ -187,14 +187,9 @@ class TeachingDashboardTest extends TestCase
         $this->assertTrue(Settings::get('approval_required'));
         $this->actingAs($this->head)->get(route('teaching.progress', ['session' => '2026']))->assertInertia(fn (Assert $p) => $p->where('summary.red', 0));     // new thresholds
 
-        $before = $this->plan->fresh()->expected_pct;
-        $this->actingAs($this->admin)->post(route('teaching.settings.holidays'), ['title' => 'Flood', 'starts_on' => '2026-03-01', 'ends_on' => '2026-03-12'])->assertSessionHasNoErrors();
-        $this->assertDatabaseHas('teaching_holidays', ['title' => 'Flood']);
-
         $this->actingAs($this->admin)->put(route('teaching.settings.grant', $this->teacher), ['abilities' => ['teaching.view_all']])->assertSessionHasNoErrors();
         $this->actingAs($this->teacher->fresh())->get(route('teaching.plans.show', $this->english))->assertOk();
         $this->actingAs($this->admin)->put(route('teaching.settings.grant', $this->teacher), ['abilities' => ['users.manage']])->assertSessionHasErrors();
-        $this->assertGreaterThan(0, $before);
     }
 
     public function test_notices_are_shown_and_marked_read(): void

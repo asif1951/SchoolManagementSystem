@@ -410,6 +410,7 @@ class RoutineController extends Controller
         $this->authorizeManage($request);
         $d = $request->validate(['days' => ['required', 'array', 'min:1'], 'days.*' => ['integer', 'between:0,6']]);
         $this->routines->setWorkingDays($d['days']);
+        app(\App\Services\AcademicCalendar::class)->changed();
 
         return back()->with('success', 'The working days were saved.');
     }

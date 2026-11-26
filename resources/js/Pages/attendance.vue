@@ -1,4 +1,5 @@
 <script setup>
+import CalendarStrip from '@/Components/Calendar/CalendarStrip.vue'
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue'
 import { Head, Link, router, useForm } from '@inertiajs/vue3'
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
@@ -20,6 +21,7 @@ const props = defineProps({
             late: 0, leave: 0, percentage: 0,
         }),
     },
+    schoolDay: { type: Object, default: null },
     selectedDate: {
         type: String,
         default: () => new Date().toISOString().split('T')[0],
@@ -212,6 +214,8 @@ const studentsList = computed(() => props.students?.data || [])
 // ============================================================
 // Attendance State
 // ============================================================
+// a holiday or closure (a weekly off day only warns)
+const noSchool = computed(() => !!props.schoolDay && !props.schoolDay.working && props.schoolDay.type !== 'weekly')
 const date = ref(props.selectedDate)
 const localStudents = ref([])
 
@@ -728,6 +732,7 @@ onBeforeUnmount(() => {
                  VIEW 1: CLASS LIST (unchanged)
             ═══════════════════════════════════════════════ -->
             <template v-if="!classInfo">
+                <CalendarStrip today-only />
                 <div class="mb-4 sm:mb-6">
                     <div class="flex items-center gap-3 sm:gap-4">
                         <div class="p-2.5 sm:p-3 bg-gradient-to-br from-pink-400 to-purple-500 rounded-2xl shadow-lg shadow-purple-500/20 flex-shrink-0">
@@ -1089,6 +1094,12 @@ onBeforeUnmount(() => {
                  VIEW 2: STUDENT LIST — REDESIGNED
             ═══════════════════════════════════════════════ -->
             <template v-else>
+                <p v-if="noSchool" class="mb-3 rounded-md border border-red-300 bg-red-50 px-4 py-2.5 text-sm font-medium text-red-900" role="alert">
+                    No school on this date: {{ schoolDay.reason }}. Attendance is not taken, and nobody is counted absent.
+                </p>
+                <p v-else-if="schoolDay && !schoolDay.working" class="mb-3 rounded-md border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm text-amber-900" role="status">
+                    This date is a weekly off day. Save attendance only if a class was really held.
+                </p>
                 <!-- Header with back + title + date picker -->
                 <div class="mb-4 sm:mb-6">
                     <button
@@ -1215,7 +1226,7 @@ onBeforeUnmount(() => {
                     </div>
                     <button
                         @click="saveAttendance"
-                        :disabled="form.processing"
+                        :disabled="form.processing || noSchool"
                         class="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 px-5 sm:px-6 py-2.5 text-sm font-bold text-white shadow-lg shadow-purple-500/30 transition active:scale-95 disabled:opacity-50"
                     >
                         <svg v-if="form.processing" class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
