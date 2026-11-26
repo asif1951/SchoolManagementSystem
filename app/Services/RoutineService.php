@@ -99,44 +99,81 @@ class RoutineService
      */
     public function savePeriods(?int $shiftId, array $rows): void
     {
-        $clean = [];
+        $clean = $this->cleanPeriodRows($rows);
 
-        foreach (array_values($rows) as $i => $r) {
-            $name = trim((string) ($r['name'] ?? ''));
-            $from = substr((string) ($r['starts_at'] ?? ''), 0, 5);
-            $to = substr((string) ($r['ends_at'] ?? ''), 0, 5);
+        $this->withoutNewClashes(function () use ($shiftId, $clean) {
+            // classes that follow this shift (or the common set): remember what they use now
+            $followers = $this->followersOf($shiftId);
+            $before = $followers->mapWithKeys(fn ($c) => [$c->id => $this->periodsForClass($c)->values()]);
 
-            if ($name === '' || ! preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $from) || ! preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $to)) {
-                throw ValidationException::withMessages(['periods' => 'Row ' . ($i + 1) . ': give a name and a start and end time.']);
-            }
-
-            if ($to <= $from) {
-                throw ValidationException::withMessages(['periods' => "Row " . ($i + 1) . " ({$name}): it must end after it starts."]);
-            }
-
-            if ($clean && $from < end($clean)['ends_at']) {
-                throw ValidationException::withMessages(['periods' => "Row " . ($i + 1) . " ({$name}) starts before the one above it ends."]);
-            }
-
-            $clean[] = ['shift_id' => $shiftId, 'name' => mb_substr($name, 0, 40), 'starts_at' => $from, 'ends_at' => $to, 'is_break' => (bool) ($r['is_break'] ?? false), 'sort_order' => $i + 1];
-        }
-
-        if (! $clean) {
-            throw ValidationException::withMessages(['periods' => 'Add at least one period.']);
-        }
-
-        DB::transaction(function () use ($shiftId, $clean) {
-            // keep the rows (and so the cells that use them) whose position still exists; add or drop the rest
             $existing = RoutinePeriod::whereNull('class_id')->where('shift_id', $shiftId)->orderBy('sort_order')->orderBy('starts_at')->get()->values();
+            $this->writePeriods($existing, $clean, ['shift_id' => $shiftId]);
 
-            foreach ($clean as $i => $row) {
-                $existing->has($i) ? $existing[$i]->update($row) : RoutinePeriod::create($row);
+            // a shift that just got periods of its own: its classes' subjects move across to them
+            foreach ($followers as $class) {
+                $after = $this->periodsForClass($class)->values();
+
+                if ($before[$class->id]->first()?->shift_id !== $after->first()?->shift_id) {
+                    $this->remap($class, $before[$class->id], $after);
+                }
             }
 
-            $existing->slice(count($clean))->each->delete();       // cells in a removed period go with it
             $this->dropCellsInBreaks();
             $this->pruneSnapshots();
         });
+    }
+
+    /** a shift goes back to the common set, the subjects of its classes moving with their position */
+    public function resetShiftPeriods(int $shiftId): void
+    {
+        $this->withoutNewClashes(function () use ($shiftId) {
+            $own = RoutinePeriod::whereNull('class_id')->where('shift_id', $shiftId)->orderBy('sort_order')->get()->values();
+
+            if ($own->isEmpty()) {
+                return;
+            }
+
+            $common = $this->periodsFor(null)->values();
+
+            foreach ($this->followersOf($shiftId) as $class) {
+                $this->remap($class, $own, $common);
+            }
+
+            RoutinePeriod::whereNull('class_id')->where('shift_id', $shiftId)->delete();
+            $this->pruneSnapshots();
+        });
+    }
+
+    /** classes with a routine that have no periods of their own and belong to this shift (for the common set: none move) */
+    private function followersOf(?int $shiftId): Collection
+    {
+        if (! $shiftId) {
+            return collect();
+        }
+
+        return SchoolClass::where('shift_id', $shiftId)
+            ->whereIn('id', ClassRoutine::select('class_id'))
+            ->whereNotIn('id', RoutinePeriod::whereNotNull('class_id')->select('class_id'))
+            ->get();
+    }
+
+    /**
+     * Write a new table of periods over the old one. Teaching periods are matched to teaching periods and breaks to breaks,
+     * in order, so a subject stays in "the 5th period" even when a break is added or removed before it.
+     */
+    private function writePeriods(Collection $existing, array $clean, array $owner): void
+    {
+        $spare = [0 => $existing->filter(fn ($p) => ! $p->is_break)->values()->all(), 1 => $existing->filter(fn ($p) => $p->is_break)->values()->all()];
+
+        foreach ($clean as $i => $row) {
+            $data = $row + $owner + ['sort_order' => $i + 1];
+            $old = array_shift($spare[$row['is_break'] ? 1 : 0]);
+            $old ? $old->update($data) : RoutinePeriod::create($data);
+        }
+
+        foreach ([...$spare[0], ...$spare[1]] as $gone) {
+            $gone->delete();                      // subjects in a period that no longer exists go with it
+        }
     }
 
 
@@ -257,33 +294,152 @@ class RoutineService
     // ------------------------------------------------------------------
 
     /**
-     * Every teacher who is in two classes at overlapping times right now. Placing a period cannot create one, but changing the
-     * periods or breaks of a class can, so this is checked after such a change and shown on the routines page.
+     * THE RULE: a teacher can never be in two classes at the same time (same academic year, overlapping clock times, any shift).
+     * It is enforced when a period is placed, when periods or breaks change, and when a routine is published.
      *
      * @return array<int,array{teacher:string, day:string, time:string, classes:string}>
      */
-    public function teacherClashes(int $limit = 50): array
+    public function teacherClashes(int $limit = 50, bool $published = false): array
     {
-        $rows = DB::table('class_routine_slots as a')
-            ->join('class_routine_slots as b', fn ($j) => $j->on('b.teacher_id', '=', 'a.teacher_id')->on('b.day', '=', 'a.day')->on('b.id', '>', 'a.id'))
-            ->join('routine_periods as pa', 'pa.id', '=', 'a.period_id')
-            ->join('routine_periods as pb', 'pb.id', '=', 'b.period_id')
-            ->join('class_routines as ra', 'ra.id', '=', 'a.class_routine_id')
-            ->join('class_routines as rb', 'rb.id', '=', 'b.class_routine_id')
-            ->join('users as u', 'u.id', '=', 'a.teacher_id')
-            ->whereColumn('a.class_routine_id', '!=', 'b.class_routine_id')
-            ->where('pa.is_break', false)->where('pb.is_break', false)
-            ->whereColumn('pa.starts_at', '<', 'pb.ends_at')->whereColumn('pb.starts_at', '<', 'pa.ends_at')
-            ->orderBy('u.name')->orderBy('a.day')->limit($limit)
-            ->get(['u.name as teacher', 'a.day', 'pa.starts_at as a_from', 'pa.ends_at as a_to', 'ra.class_id as a_class', 'rb.class_id as b_class']);
+        return $this->describeClashes(array_slice($this->clashPairs($published), 0, $limit));
+    }
 
-        $classes = SchoolClass::whereIn('id', $rows->pluck('a_class')->merge($rows->pluck('b_class'))->unique())->get()->keyBy('id');
+    /**
+     * Every pair of routine cells that books one teacher twice, in the drafts or in the published copies.
+     *
+     * @return array<int,array{teacher:int, day:int, a:array, b:array}>
+     */
+    private function clashPairs(bool $published): array
+    {
+        $entries = [];
 
-        return $rows->map(fn ($r) => [
-            'teacher' => $r->teacher, 'day' => self::DAYS[(int) $r->day]['en'],
-            'time' => RoutinePeriod::clock(substr($r->a_from, 0, 5)) . ' – ' . RoutinePeriod::clock(substr($r->a_to, 0, 5)),
-            'classes' => ($classes[$r->a_class]->short_label ?? '?') . ' and ' . ($classes[$r->b_class]->short_label ?? '?'),
-        ])->all();
+        if ($published) {
+            foreach (ClassRoutine::whereNotNull('published_slots')->get(['class_id', 'published_slots']) as $r) {
+                foreach ($r->published_slots ?? [] as $x) {
+                    ($x['teacher_id'] ?? null) && $entries[] = [(int) $x['teacher_id'], (int) $x['day'], (int) $x['period_id'], (int) $r->class_id];
+                }
+            }
+        } else {
+            foreach (DB::table('class_routine_slots as s')->join('class_routines as r', 'r.id', '=', 's.class_routine_id')->whereNotNull('s.teacher_id')
+                ->get(['s.teacher_id', 's.day', 's.period_id', 'r.class_id']) as $x) {
+                $entries[] = [(int) $x->teacher_id, (int) $x->day, (int) $x->period_id, (int) $x->class_id];
+            }
+        }
+
+        $periods = RoutinePeriod::where('is_break', false)->get()->keyBy('id');
+        $years = SchoolClass::whereIn('id', array_unique(array_column($entries, 3)))->pluck('academic_year', 'id');
+        $groups = [];
+
+        foreach ($entries as [$teacher, $day, $pid, $classId]) {
+            if (isset($periods[$pid], $years[$classId])) {
+                $groups[$years[$classId] . '|' . $teacher . '|' . $day][] = ['class' => $classId, 'from' => $periods[$pid]->start, 'to' => $periods[$pid]->end, 'teacher' => $teacher, 'day' => $day];
+            }
+        }
+
+        $pairs = [];
+
+        foreach ($groups as $list) {
+            usort($list, fn ($x, $y) => [$x['from'], $x['class']] <=> [$y['from'], $y['class']]);
+
+            foreach ($list as $i => $a) {
+                for ($j = $i + 1; $j < count($list) && $list[$j]['from'] < $a['to']; $j++) {
+                    if ($list[$j]['class'] !== $a['class']) {
+                        $pairs[] = ['teacher' => $a['teacher'], 'day' => $a['day'], 'a' => $a, 'b' => $list[$j]];
+                    }
+                }
+            }
+        }
+
+        return $pairs;
+    }
+
+    private function describeClashes(array $pairs): array
+    {
+        $names = User::whereIn('id', array_column($pairs, 'teacher'))->pluck('name', 'id');
+        $ids = array_merge(array_map(fn ($p) => $p['a']['class'], $pairs), array_map(fn ($p) => $p['b']['class'], $pairs));
+        $classes = SchoolClass::whereIn('id', array_unique($ids))->get()->keyBy('id');
+
+        return array_map(fn ($p) => [
+            'teacher' => $names[$p['teacher']] ?? '?', 'day' => self::DAYS[$p['day']]['en'],
+            'time' => RoutinePeriod::clock($p['b']['from']) . ' – ' . RoutinePeriod::clock(min($p['a']['to'], $p['b']['to'])),
+            'classes' => ($classes[$p['a']['class']]->short_label ?? '?') . ' and ' . ($classes[$p['b']['class']]->short_label ?? '?'),
+        ], $pairs);
+    }
+
+    private function clashSentences(array $clashes): string
+    {
+        $shown = array_map(fn ($c) => "{$c['teacher']} would be in {$c['classes']} on {$c['day']} at {$c['time']}", array_slice($clashes, 0, 4));
+
+        return implode('; ', $shown) . (count($clashes) > 4 ? '; and ' . (count($clashes) - 4) . ' more' : '');
+    }
+
+    /**
+     * Run a change to the periods, and undo all of it if it would put any teacher in two classes at once.
+     * Double bookings that existed before are not blamed on this change (so they can still be repaired).
+     *
+     * @throws ValidationException
+     */
+    public function withoutNewClashes(\Closure $change)
+    {
+        return DB::transaction(function () use ($change) {
+            $key = fn ($p) => $p['teacher'] . '|' . $p['day'] . '|' . min($p['a']['class'], $p['b']['class']) . '|' . max($p['a']['class'], $p['b']['class']);
+            $count = fn () => [false => array_count_values(array_map($key, $this->clashPairs(false))), true => array_count_values(array_map($key, $this->clashPairs(true)))];
+
+            $before = $count();
+            $result = $change();
+            $new = [];
+
+            foreach ([false, true] as $published) {
+                $seen = [];
+
+                foreach ($this->clashPairs($published) as $p) {
+                    $k = $key($p);
+                    $seen[$k] = ($seen[$k] ?? 0) + 1;
+
+                    if ($seen[$k] > ($before[(int) $published][$k] ?? 0)) {
+                        $new[$k . '|' . $p['a']['from']] = $p;
+                    }
+                }
+            }
+
+            if ($new) {
+                throw ValidationException::withMessages(['periods' => 'Not saved: a teacher cannot be in two classes at the same time. With these times, ' . $this->clashSentences($this->describeClashes(array_values($new))) . '. Change the times, or give one of those periods to another teacher first.']);
+            }
+
+            return $result;
+        });
+    }
+
+    /**
+     * For the editor: who cannot take each period of this class, and why.
+     *
+     * @return array<string,array<int,string>>  "day-periodId" => [teacher id => where they are]
+     */
+    private function busyMap(SchoolClass $class, Collection $periods, array $days): array
+    {
+        $rows = DB::table('class_routine_slots as s')
+            ->join('class_routines as r', 'r.id', '=', 's.class_routine_id')
+            ->join('classes as c', 'c.id', '=', 'r.class_id')
+            ->join('routine_periods as p', 'p.id', '=', 's.period_id')
+            ->whereNotNull('s.teacher_id')->where('p.is_break', false)
+            ->where('c.academic_year', $class->academic_year)->where('c.id', '!=', $class->id)
+            ->get(['s.teacher_id', 's.day', 'p.starts_at', 'p.ends_at', 'c.id as class_id']);
+
+        $classes = SchoolClass::whereIn('id', $rows->pluck('class_id')->unique())->get()->keyBy('id');
+        $map = [];
+
+        foreach ($periods->where('is_break', false) as $p) {
+            foreach ($rows as $r) {
+                $from = substr($r->starts_at, 0, 5);
+                $to = substr($r->ends_at, 0, 5);
+
+                if (in_array((int) $r->day, $days, true) && $from < $p->end && $to > $p->start) {
+                    $map[$r->day . '-' . $p->id][(int) $r->teacher_id] = ($classes[$r->class_id]->short_label ?? 'another class') . ', ' . RoutinePeriod::clock($from) . ' – ' . RoutinePeriod::clock($to);
+                }
+            }
+        }
+
+        return $map;
     }
 
     // ------------------------------------------------------------------
@@ -354,16 +510,11 @@ class RoutineService
     {
         $clean = $this->cleanPeriodRows($rows);
 
-        DB::transaction(function () use ($class, $clean) {
+        $this->withoutNewClashes(function () use ($class, $clean) {
             $before = $this->periodsForClass($class)->values();
             $own = RoutinePeriod::where('class_id', $class->id)->orderBy('sort_order')->orderBy('starts_at')->get()->values();
 
-            foreach ($clean as $i => $row) {
-                $data = $row + ['class_id' => $class->id, 'shift_id' => null, 'sort_order' => $i + 1];
-                $own->has($i) ? $own[$i]->update($data) : $own->put($i, RoutinePeriod::create($data));
-            }
-
-            $own->slice(count($clean))->each->delete();
+            $this->writePeriods($own, $clean, ['class_id' => $class->id, 'shift_id' => null]);
 
             $after = RoutinePeriod::where('class_id', $class->id)->orderBy('sort_order')->get()->values();
 
@@ -380,7 +531,7 @@ class RoutineService
     /** the class goes back to the periods of its shift (or the common set), its cells moving with their position */
     public function resetClassPeriods(SchoolClass $class): void
     {
-        DB::transaction(function () use ($class) {
+        $this->withoutNewClashes(function () use ($class) {
             $own = RoutinePeriod::where('class_id', $class->id)->orderBy('sort_order')->get()->values();
 
             if ($own->isEmpty()) {
@@ -600,6 +751,7 @@ class RoutineService
             'periods' => $periods->map(fn ($p) => ['id' => $p->id, 'name' => $p->name, 'start' => $p->start, 'end' => $p->end, 'time' => RoutinePeriod::clock($p->start) . ' – ' . RoutinePeriod::clock($p->end), 'is_break' => $p->is_break])->values()->all(),
             'cells' => $cells,
             'subjects' => $subjectList,
+            'busy' => $published ? [] : $this->busyMap($class, $periods, $days),
             'plan_check' => $published ? ['over' => [], 'under' => []] : $this->planCheck($class, $cells),
             'period_source' => $this->periodSource($class),
             'published' => $routine->is_published,
@@ -685,14 +837,21 @@ class RoutineService
             throw ValidationException::withMessages(['teacher_id' => 'Choose an active teacher.']);
         }
 
-        if ($teacherId !== null && ($clash = $this->clash($teacherId, $day, $period, $routine->id))) {
-            throw ValidationException::withMessages(['teacher_id' => "{$clash['teacher']} already teaches {$clash['class']} on " . self::DAYS[$day]['en'] . " at {$clash['time']}."]);
-        }
+        DB::transaction(function () use ($class, $routine, $period, $day, $periodId, $subjectId, $label, $teacherId) {
+            if ($teacherId !== null) {
+                // two people saving the same teacher at the same moment are handled one after the other
+                User::whereKey($teacherId)->lockForUpdate()->first(['id']);
 
-        ClassRoutineSlot::updateOrCreate(
-            ['class_routine_id' => $routine->id, 'day' => $day, 'period_id' => $periodId],
-            ['subject_id' => $subjectId, 'label' => $label, 'teacher_id' => $teacherId],
-        );
+                if ($clash = $this->clash($teacherId, $day, $period, $routine->id, $class->academic_year)) {
+                    throw ValidationException::withMessages(['teacher_id' => "Not allowed: {$clash['teacher']} already teaches {$clash['class']} on " . self::DAYS[$day]['en'] . " at {$clash['time']}. A teacher cannot be in two classes at the same time."]);
+                }
+            }
+
+            ClassRoutineSlot::updateOrCreate(
+                ['class_routine_id' => $routine->id, 'day' => $day, 'period_id' => $periodId],
+                ['subject_id' => $subjectId, 'label' => $label, 'teacher_id' => $teacherId],
+            );
+        });
     }
 
     /**
@@ -700,7 +859,7 @@ class RoutineService
      *
      * @return array{teacher:string, class:string, time:string}|null
      */
-    public function clash(int $teacherId, int $day, RoutinePeriod $period, ?int $exceptRoutineId = null): ?array
+    public function clash(int $teacherId, int $day, RoutinePeriod $period, ?int $exceptRoutineId = null, ?string $year = null): ?array
     {
         $row = ClassRoutineSlot::query()
             ->join('routine_periods as p', 'p.id', '=', 'class_routine_slots.period_id')
@@ -713,6 +872,7 @@ class RoutineService
             ->where('p.starts_at', '<', $period->ends_at)
             ->where('p.ends_at', '>', $period->starts_at)
             ->when($exceptRoutineId, fn ($q) => $q->where('class_routine_slots.class_routine_id', '!=', $exceptRoutineId))
+            ->when($year, fn ($q) => $q->where('c.academic_year', $year))
             ->select('c.id as class_id', 'u.name as teacher', 'p.starts_at', 'p.ends_at')
             ->first();
 
@@ -724,6 +884,93 @@ class RoutineService
 
         return ['teacher' => $row->teacher, 'class' => $class?->short_label ?? 'another class',
                 'time' => RoutinePeriod::clock(substr($row->starts_at, 0, 5)) . ' – ' . RoutinePeriod::clock(substr($row->ends_at, 0, 5))];
+    }
+
+    /**
+     * Save everything arranged on the editor at once. All or nothing: it is refused if any teacher would be in two classes
+     * at once, or a subject would newly pass the class's weekly plan. A change with neither subject nor label empties a cell.
+     *
+     * @param  array<int,array{day:int,period_id:int,subject?:?string,label?:?string,teacher_id?:?int}>  $changes
+     *
+     * @throws ValidationException
+     */
+    public function saveCells(SchoolClass $class, array $changes): void
+    {
+        $routine = $this->routineFor($class);
+        $periods = $this->periodsForClass($class)->where('is_break', false)->keyBy('id');
+        $days = $this->workingDays();
+        $subjects = collect($this->subjectsOf($class))->keyBy('name');
+        $fail = fn (string $why) => throw ValidationException::withMessages(['save' => 'Nothing was saved. ' . $why]);
+
+        DB::transaction(function () use ($class, $routine, $periods, $days, $subjects, $changes, $fail) {
+            $teacherIds = array_values(array_unique(array_filter(array_map(fn ($c) => (int) ($c['teacher_id'] ?? 0), $changes))));
+            $teachers = User::whereIn('id', $teacherIds)->orderBy('id')->lockForUpdate()->get()->keyBy('id');
+            $already = $routine->slots()->pluck('teacher_id')->filter()->flip();
+            $before = $this->draftSlots($routine);
+
+            foreach ($changes as $c) {
+                ClassRoutineSlot::where('class_routine_id', $routine->id)->where('day', (int) $c['day'])->where('period_id', (int) $c['period_id'])->delete();
+            }
+
+            foreach ($changes as $c) {
+                $day = (int) $c['day'];
+                $pid = (int) $c['period_id'];
+                $subject = trim((string) ($c['subject'] ?? '')) ?: null;
+                $label = mb_substr(trim((string) ($c['label'] ?? '')), 0, 60) ?: null;
+                $teacherId = (int) ($c['teacher_id'] ?? 0) ?: null;
+
+                if (! $subject && ! $label) {
+                    continue;
+                }
+
+                if (! isset($periods[$pid]) || ! in_array($day, $days, true)) {
+                    $fail('One of those is not a teaching period of this class.');
+                }
+
+                $where = self::DAYS[$day]['en'] . ', ' . $periods[$pid]->name . ' period';
+
+                if ($subject && ! $subjects->has($subject)) {
+                    $fail("{$where}: \"{$subject}\" is not a subject of this class.");
+                }
+
+                $subjectId = $subject ? $subjects[$subject]['subject_id'] : null;
+
+                if ($teacherId) {
+                    $t = $teachers[$teacherId] ?? null;
+
+                    if (! $t || (! isset($already[$teacherId]) && ($t->role !== User::ROLE_TEACHER || $t->status !== User::STATUS_ACTIVE))) {
+                        $fail("{$where}: choose an active teacher.");
+                    }
+
+                    if ($clash = $this->clash($teacherId, $day, $periods[$pid], $routine->id, $class->academic_year)) {
+                        $fail("{$where}: {$clash['teacher']} already teaches {$clash['class']} at {$clash['time']}. A teacher cannot be in two classes at the same time.");
+                    }
+                }
+
+                ClassRoutineSlot::create(['class_routine_id' => $routine->id, 'day' => $day, 'period_id' => $pid, 'subject_id' => $subjectId,
+                                          'label' => $subject ? ($subjectId ? null : $subject) : $label, 'teacher_id' => $teacherId]);
+            }
+
+            // the weekly plan: only what this save makes worse is refused, so an old routine can still be rearranged
+            $after = $this->draftSlots($routine);
+
+            foreach (RoutinePlan::where('class_id', $class->id)->where('periods_per_week', '>', 0)->get() as $plan) {
+                $id = $subjects[$plan->subject]['subject_id'] ?? null;
+                $mine = fn (Collection $slots) => $slots->filter(fn ($x) => $id ? $x['subject_id'] === (int) $id : $x['label'] === $plan->subject);
+                $was = $mine($before);
+                $now = $mine($after);
+
+                if ($now->count() > $plan->periods_per_week && $now->count() > $was->count()) {
+                    $fail("{$plan->subject} would have {$now->count()} periods, and this class's plan says {$plan->periods_per_week} a week.");
+                }
+
+                foreach ($now->countBy('day') as $day => $n) {
+                    if ($n > $plan->max_per_day && $n > $was->where('day', $day)->count()) {
+                        $fail("{$plan->subject} would be on " . self::DAYS[$day]['en'] . " {$n} times, and this class's plan allows {$plan->max_per_day} a day.");
+                    }
+                }
+            }
+        });
     }
 
     /**
@@ -845,11 +1092,11 @@ class RoutineService
         $changed = 0;
         $names = User::whereIn('id', $remaining)->pluck('name', 'id');
 
-        $replacement = function (int $day, int $periodId) use ($remaining, $periods, $routine): ?int {
+        $replacement = function (int $day, int $periodId, bool $published = false) use ($remaining, $periods, $routine, $class): ?int {
             $period = $periods[$periodId] ?? null;
 
             foreach ($remaining as $t) {
-                if ($period && ! $this->clash($t, $day, $period, $routine->id)) {
+                if ($period && ! $this->clash($t, $day, $period, $routine->id, $class->academic_year) && ! ($published && $this->publishedClash($t, $day, $period, $class))) {
                     return $t;
                 }
             }
@@ -883,7 +1130,7 @@ class RoutineService
 
                 foreach ($snapshot as $i => $s) {
                     if (in_array((int) ($s['teacher_id'] ?? 0), $removed, true) && $isThisSubject($s)) {
-                        $snapshot[$i]['teacher_id'] = $replacement((int) $s['day'], (int) $s['period_id']);
+                        $snapshot[$i]['teacher_id'] = $replacement((int) $s['day'], (int) $s['period_id'], true);
                         $touched = true;
                         $changed++;
                     }
@@ -914,9 +1161,41 @@ class RoutineService
             throw ValidationException::withMessages(['publish' => 'The routine is empty: fill in some periods before publishing it.']);
         }
 
+        $found = [];
+        $periods = $this->periodsForClass($class)->keyBy('id');
+
+        foreach ($slots->filter(fn ($x) => $x['teacher_id'] && isset($periods[$x['period_id']])) as $x) {
+            $p = $periods[$x['period_id']];
+            $other = $this->clash($x['teacher_id'], $x['day'], $p, $routine->id, $class->academic_year);
+            $where = $other ? "{$other['class']} (draft)" : (($c = $this->publishedClash($x['teacher_id'], $x['day'], $p, $class)) ? "{$c} (its published routine: publish that class's changes first)" : null);
+
+            $where && $found[] = User::find($x['teacher_id'])?->name . ' on ' . self::DAYS[$x['day']]['en'] . " {$p->name} period is also in {$where}";
+        }
+
+        if ($found) {
+            throw ValidationException::withMessages(['publish' => 'Not published: a teacher cannot be in two classes at the same time. ' . implode('; ', array_slice($found, 0, 4)) . (count($found) > 4 ? '; and ' . (count($found) - 4) . ' more' : '') . '.']);
+        }
+
         $routine->update(['published_slots' => $slots->values()->all(), 'published_at' => now(), 'published_by' => $by->id]);
 
         return $routine;
+    }
+
+    /** the class (short name) whose PUBLISHED routine has this teacher at an overlapping time, if any */
+    private function publishedClash(int $teacherId, int $day, RoutinePeriod $period, SchoolClass $except): ?string
+    {
+        $others = ClassRoutine::whereNotNull('published_slots')->where('class_id', '!=', $except->id)
+            ->whereIn('class_id', SchoolClass::where('academic_year', $except->academic_year)->select('id'))->get(['class_id', 'published_slots']);
+
+        foreach ($others as $r) {
+            $ids = collect($r->published_slots)->filter(fn ($x) => (int) ($x['teacher_id'] ?? 0) === $teacherId && (int) $x['day'] === $day)->pluck('period_id');
+
+            if ($ids->isNotEmpty() && RoutinePeriod::whereIn('id', $ids)->where('starts_at', '<', $period->ends_at)->where('ends_at', '>', $period->starts_at)->exists()) {
+                return SchoolClass::find($r->class_id)?->short_label ?? 'another class';
+            }
+        }
+
+        return null;
     }
 
     public function unpublish(SchoolClass $class): void
@@ -933,8 +1212,9 @@ class RoutineService
      *
      * @param  bool  $published  true = only what has been published, false = the drafts as they stand
      */
-    public function teacherGrid(int $teacherId, bool $published): array
+    public function teacherGrid(int $teacherId, bool $published, ?string $year = null): array
     {
+        $inYear = $year ? SchoolClass::where('academic_year', $year)->pluck('id')->flip() : null;
         $teacher = User::find($teacherId);
         $days = $this->workingDays();
         $rows = [];                     // [day, period_id, class_id, subject_id, label]
@@ -953,6 +1233,8 @@ class RoutineService
                 $rows[] = [(int) $s->day, (int) $s->period_id, (int) $s->class_id, $s->subject_id, $s->label];
             }
         }
+
+        $inYear && $rows = array_values(array_filter($rows, fn ($r) => isset($inYear[$r[2]])));
 
         $periods = RoutinePeriod::whereIn('id', array_unique(array_column($rows, 1)))->get()->keyBy('id');
         $classes = SchoolClass::whereIn('id', array_unique(array_column($rows, 2)))->get()->keyBy('id');

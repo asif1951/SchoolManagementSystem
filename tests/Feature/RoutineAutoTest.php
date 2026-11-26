@@ -347,27 +347,17 @@ class RoutineAutoTest extends TestCase
         $this->assertSame(6, RoutinePlan::where('class_id', $c->id)->where('subject', 'Math')->value('periods_per_week'));   // the plan was saved
     }
 
-    public function test_many_classes_are_generated_together_from_the_generate_page(): void
+    public function test_there_is_no_way_to_generate_many_classes_at_once(): void
     {
-        $classes = collect(['A', 'B'])->map(fn ($s) => $this->section('Class 6', $s, ['Math' => [5, 1], 'English' => [5, 1], 'Bangla' => [5, 1], 'Science' => [5, 1], 'ICT' => [5, 1]]));
-
-        $this->actingAs($this->admin)->get(route('routine.generate', ['session' => (string) $classes[0]->academic_year]))->assertOk()
-            ->assertInertia(fn ($p) => $p->component('Routine/Generate')->has('classes', 2)->where('classes.0.planned', 25)->where('classes.0.capacity', 30));
-
-        $ids = $classes->pluck('id')->all();
-        $this->actingAs($this->admin)->postJson(route('routine.generate.preview'), ['class_ids' => $ids, 'seed' => 8])->assertOk()->assertJsonPath('ok', true);
-        $this->assertSame(0, ClassRoutineSlot::count());
-
-        $this->actingAs($this->admin)->post(route('routine.generate.apply'), ['class_ids' => $ids, 'seed' => 8])->assertSessionHasNoErrors();
-        $this->assertSame(50, ClassRoutineSlot::count());
-        $this->assertNoTeacherIsInTwoPlaces();
+        $this->assertFalse(\Illuminate\Support\Facades\Route::has('routine.generate'));
+        $this->assertFalse(\Illuminate\Support\Facades\Route::has('routine.generate.apply'));
+        $this->actingAs($this->admin)->get('/routine/generate')->assertNotFound();
     }
 
     public function test_only_those_who_manage_can_generate_or_change_periods(): void
     {
         $c = $this->section('Class 6', 'A');
 
-        $this->actingAs($this->t['math'])->get(route('routine.generate'))->assertForbidden();
         $this->actingAs($this->t['math'])->postJson(route('routine.auto.preview', $c), ['plan' => [['subject' => 'Math', 'periods_per_week' => 1]]])->assertForbidden();
         $this->actingAs($this->t['math'])->put(route('routine.class-periods.save', $c), ['periods' => [['name' => '1st', 'starts_at' => '09:00', 'ends_at' => '09:40']]])->assertForbidden();
         $this->actingAs($this->t['math'])->put(route('routine.plan.save', $c), ['plan' => [['subject' => 'Math', 'periods_per_week' => 1]]])->assertForbidden();

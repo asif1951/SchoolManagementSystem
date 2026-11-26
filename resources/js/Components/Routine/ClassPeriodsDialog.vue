@@ -4,7 +4,7 @@
  * ("start 10:00, 40 minutes, 7 periods, a 30 minute break after the 4th"); the table can then be changed row by row.
  */
 import { router } from '@inertiajs/vue3'
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 
 const props = defineProps({
     classId: { type: Number, required: true },
@@ -19,13 +19,29 @@ const emit = defineEmits(['close'])
 const rows = ref(props.periods.map((p) => ({ name: p.name, starts_at: p.start, ends_at: p.end, is_break: !!p.is_break })))
 
 // ---- the builder ----------------------------------------------------------------------------------------------------
-const b = reactive({ start: props.periods[0]?.start || '10:00', length: 40, count: props.periods.filter((p) => !p.is_break).length || 7, breakAfter: 4, breakLength: 30 })
-
 const toMin = (t) => { const [h, m] = String(t).split(':').map(Number); return h * 60 + m }
 const fmt = (n) => `${String(Math.floor(n / 60) % 24).padStart(2, '0')}:${String(n % 60).padStart(2, '0')}`
 const ordinal = (n) => `${n}${[, 'st', 'nd', 'rd'][n % 100 > 10 && n % 100 < 14 ? 0 : n % 10] || 'th'}`
 
+// the boxes start from what the class has now, so "no break" is shown as 0 and 0 when you open it again
+const readBuilder = () => {
+    const teaching = rows.value.filter((r) => !r.is_break)
+    const at = rows.value.findIndex((r) => r.is_break)
+    const br = at >= 0 ? rows.value[at] : null
+    return {
+        start: rows.value[0]?.starts_at || '10:00',
+        length: teaching.length ? toMin(teaching[0].ends_at) - toMin(teaching[0].starts_at) : 40,
+        count: teaching.length || 7,
+        breakAfter: br ? rows.value.slice(0, at).filter((r) => !r.is_break).length : 0,
+        breakLength: br ? toMin(br.ends_at) - toMin(br.starts_at) : 0,
+    }
+}
+const b = reactive(readBuilder())
+
 const build = () => {
+    // wait until the numbers make sense (a box may be empty while you type)
+    if (!/^\d\d:\d\d/.test(b.start) || !(Number(b.length) >= 10) || !(Number(b.count) >= 1 && Number(b.count) <= 14)) return
+
     let t = toMin(b.start)
     const out = []
 
@@ -41,6 +57,9 @@ const build = () => {
 
     rows.value = out
 }
+
+// the table follows the boxes at once, so Save always saves what they say
+watch(b, build)
 
 const addBreak = () => {
     const last = rows.value[rows.value.length - 1]
@@ -69,13 +88,15 @@ const find = ref('')
 const shown = computed(() => props.classes.filter((c) => c.id !== props.classId && (!find.value || c.label.toLowerCase().includes(find.value.toLowerCase()))))
 
 const busy = ref(false)
+const failed = ref('')
 const save = () => {
     busy.value = true
+    failed.value = ''
     router.put(route('routine.class-periods.save', props.classId), { periods: rows.value, also_for: alsoFor.value }, {
-        preserveScroll: true, onSuccess: () => emit('close'), onFinish: () => { busy.value = false },
+        preserveScroll: true, preserveState: true, onSuccess: () => emit('close'), onError: (e) => { failed.value = Object.values(e)[0] || 'Please check the times.' }, onFinish: () => { busy.value = false },
     })
 }
-const reset = () => router.delete(route('routine.class-periods.reset', props.classId), { preserveScroll: true, onSuccess: () => emit('close') })
+const reset = () => router.delete(route('routine.class-periods.reset', props.classId), { preserveScroll: true, preserveState: true, onSuccess: () => emit('close'), onError: (e) => { failed.value = Object.values(e)[0] } })
 
 const sourceText = computed(() => ({ class: 'This class has periods of its own.', shift: "This class uses the periods of its shift.", common: 'This class uses the common periods.' }[props.source]))
 </script>
@@ -84,19 +105,16 @@ const sourceText = computed(() => ({ class: 'This class has periods of its own.'
     <div class="space-y-5">
         <p class="text-sm text-slate-600 dark:text-slate-300">{{ sourceText }} Change the length of the periods and the breaks for this class only. Subjects already placed stay with their position (the 3rd period stays the 3rd).</p>
 
-        <div v-if="errors.periods" class="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800" role="alert">{{ errors.periods }}</div>
-
         <fieldset class="rounded-md border border-slate-200 p-4 dark:border-slate-800">
             <legend class="px-1 text-sm font-semibold">Quick builder</legend>
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-5">
                 <div><label class="field-label" for="b-start">First period starts</label><input id="b-start" v-model="b.start" type="time" class="field" /></div>
                 <div><label class="field-label" for="b-len">Each period (min)</label><input id="b-len" v-model.number="b.length" type="number" min="10" max="120" class="field" /></div>
                 <div><label class="field-label" for="b-count">Periods</label><input id="b-count" v-model.number="b.count" type="number" min="1" max="14" class="field" /></div>
-                <div><label class="field-label" for="b-after">Break after period</label><input id="b-after" v-model.number="b.breakAfter" type="number" min="1" max="14" class="field" /></div>
+                <div><label class="field-label" for="b-after">Break after period</label><input id="b-after" v-model.number="b.breakAfter" type="number" min="0" max="14" class="field" /></div>
                 <div><label class="field-label" for="b-bl">Break (min)</label><input id="b-bl" v-model.number="b.breakLength" type="number" min="0" max="120" class="field" /></div>
             </div>
-            <button type="button" class="btn mt-3" @click="build">Build the periods</button>
-            <span class="ml-3 text-xs text-slate-500">This replaces the table below; you can still change any row.</span>
+            <p class="mt-3 text-xs text-slate-500">The table below changes as you type. For no break, put 0. These boxes make one break; for two or more, use "Add a break" and edit the rows, then save.</p>
         </fieldset>
 
         <div>
@@ -136,6 +154,8 @@ const sourceText = computed(() => ({ class: 'This class has periods of its own.'
                 <p class="mt-2 text-xs text-slate-500">Their own periods are replaced; what they already have placed stays in the same position.</p>
             </div>
         </details>
+
+        <div v-if="failed" class="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800" role="alert">Not saved. {{ failed }}</div>
 
         <div class="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-4 dark:border-slate-800">
             <button v-if="source === 'class'" type="button" class="btn" @click="reset">Use the shift's periods again</button>

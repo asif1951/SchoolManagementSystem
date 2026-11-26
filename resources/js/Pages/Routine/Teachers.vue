@@ -5,6 +5,8 @@ import { computed, ref, watch } from 'vue'
 
 const props = defineProps({
     teachers: { type: Array, default: () => [] },
+    years: { type: Array, default: () => [] },
+    session: { type: String, default: '' },
     teacherId: { type: Number, default: null },
     source: { type: String, default: 'published' },
     grid: { type: Object, default: null },
@@ -13,11 +15,12 @@ const props = defineProps({
 
 const pick = ref(props.teacherId ? String(props.teacherId) : '')
 const src = ref(props.source)
-const go = () => router.get(route('routine.teachers'), { teacher: pick.value || undefined, source: src.value === 'draft' ? 'draft' : undefined }, { preserveState: true, replace: true })
+const year = ref(props.session)
+const go = () => router.get(route('routine.teachers'), { teacher: pick.value || undefined, session: year.value, source: src.value === 'draft' ? 'draft' : undefined }, { preserveState: true, replace: true })
 watch(pick, go)
 
 const cell = (day, col) => props.grid?.cells[`${day.id}|${col.key}`] || []
-const printUrl = computed(() => (props.grid?.teacher ? route('routine.teachers.print', { teacher: props.grid.teacher.id, source: src.value === 'draft' ? 'draft' : undefined }) : null))
+const printUrl = computed(() => (props.grid?.teacher ? route('routine.teachers.print', { teacher: props.grid.teacher.id, session: year.value, source: src.value === 'draft' ? 'draft' : undefined }) : null))
 </script>
 
 <template>
@@ -37,13 +40,17 @@ const printUrl = computed(() => (props.grid?.teacher ? route('routine.teachers.p
                     <a v-if="printUrl" :href="printUrl" target="_blank" rel="noopener" class="btn">Print</a>
                 </header>
 
-                <section v-if="can.manage" class="panel mb-4 p-4">
-                    <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                        <div class="sm:col-span-2">
+                <section class="panel mb-4 p-4">
+                    <div class="grid grid-cols-1 gap-3 sm:grid-cols-4">
+                        <div>
+                            <label class="field-label" for="y">Academic year</label>
+                            <select id="y" v-model="year" class="field" @change="go"><option v-for="y in years" :key="y" :value="y">{{ y }}</option></select>
+                        </div>
+                        <div v-if="can.manage" class="sm:col-span-2">
                             <label class="field-label" for="t">Teacher</label>
                             <select id="t" v-model="pick" class="field"><option value="">Choose a teacher</option><option v-for="t in teachers" :key="t.id" :value="String(t.id)">{{ t.name }}</option></select>
                         </div>
-                        <div>
+                        <div v-if="can.manage">
                             <label class="field-label" for="s">Show</label>
                             <select id="s" v-model="src" class="field" @change="go"><option value="published">Published routines</option><option value="draft">Drafts as they stand</option></select>
                         </div>

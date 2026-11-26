@@ -118,6 +118,7 @@ class RoutineGenerator
             ->join('routine_periods as p', 'p.id', '=', 'class_routine_slots.period_id')
             ->whereNotNull('class_routine_slots.teacher_id')->where('p.is_break', false)
             ->when($inRun, fn ($q) => $q->whereNotIn('r.class_id', $inRun))
+            ->whereIn('r.class_id', \App\Models\SchoolClass::whereIn('academic_year', $classes->pluck('academic_year')->unique())->select('id'))
             ->get(['class_routine_slots.teacher_id as t', 'class_routine_slots.day as d', 'p.starts_at as a', 'p.ends_at as b']);
 
         foreach ($rows as $r) {

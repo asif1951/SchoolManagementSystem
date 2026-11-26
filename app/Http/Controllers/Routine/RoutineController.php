@@ -149,6 +149,26 @@ class RoutineController extends Controller
         return back();
     }
 
+    /** everything arranged on the editor, saved in one go */
+    public function cells(Request $request, SchoolClass $class)
+    {
+        $this->authorizeManage($request);
+
+        $d = $request->validate([
+            'changes' => ['required', 'array', 'min:1', 'max:200'],
+            'changes.*.day' => ['required', 'integer', 'between:0,6'],
+            'changes.*.period_id' => ['required', 'integer'],
+            'changes.*.subject' => ['nullable', 'string', 'max:100'],
+            'changes.*.label' => ['nullable', 'string', 'max:60'],
+            'changes.*.teacher_id' => ['nullable', 'integer'],
+        ]);
+
+        $this->routines->saveCells($class, $d['changes']);
+        $this->routines->routineFor($class)->touch();
+
+        return back();
+    }
+
     public function copyDay(Request $request, SchoolClass $class)
     {
         $this->authorizeManage($request);
@@ -219,13 +239,12 @@ class RoutineController extends Controller
             'also_for.*' => ['integer', 'exists:classes,id'],
         ]);
 
-        $this->routines->saveClassPeriods($class, $d['periods']);
-        $others = $this->routines->copyClassPeriods($class, $d['also_for'] ?? []);
-        $this->routines->routineFor($class)->touch();
+        $others = $this->routines->withoutNewClashes(function () use ($class, $d) {
+            $this->routines->saveClassPeriods($class, $d['periods']);
 
-        if ($clashes = count($this->routines->teacherClashes())) {
-            return back()->with('error', "The periods were saved, but {$clashes} " . ($clashes === 1 ? 'teacher is' : 'teachers are') . ' now in two classes at the same time. See the warning on the Class routines page.');
-        }
+            return $this->routines->copyClassPeriods($class, $d['also_for'] ?? []);
+        });
+        $this->routines->routineFor($class)->touch();
 
         return back()->with('success', $others ? "The periods were saved for {$class->full_label} and {$others} other " . ($others === 1 ? 'class' : 'classes') . '.' : 'The periods of this class were saved.');
     }
@@ -298,59 +317,6 @@ class RoutineController extends Controller
         ];
     }
 
-    // ---- many classes at once ----------------------------------------------------------------------------------------
-
-    public function generatePage(Request $request)
-    {
-        $this->authorizeManage($request);
-        $this->routines->ensureDefaultPeriods();
-
-        $years = $this->years();
-        $year = (string) $request->input('session', $years[0]);
-        $days = count($this->routines->workingDays());
-
-        $classes = SchoolClass::where('academic_year', $year)->where('status', 'active')->get()
-            ->sort(fn ($a, $b) => strnatcasecmp($a->class_name, $b->class_name) ?: strnatcasecmp((string) $a->section, (string) $b->section))->values();
-
-        $planned = RoutinePlan::whereIn('class_id', $classes->pluck('id'))->selectRaw('class_id, SUM(periods_per_week) n')->groupBy('class_id')->pluck('n', 'class_id');
-        $routines = ClassRoutine::whereIn('class_id', $classes->pluck('id'))->withCount('slots')->get()->keyBy('class_id');
-
-        return Inertia::render('Routine/Generate', [
-            'years' => $years, 'session' => $year,
-            'classes' => $classes->map(function ($c) use ($planned, $routines, $days) {
-                $slots = $this->routines->periodsForClass($c)->where('is_break', false)->count() * $days;
-
-                return ['id' => $c->id, 'label' => $c->full_label, 'shift' => $c->shift_name, 'medium' => $c->medium_name, 'class_teacher' => $c->class_teacher ?: null,
-                        'planned' => (int) ($planned[$c->id] ?? 0), 'capacity' => $slots, 'filled' => $routines[$c->id]->slots_count ?? 0];
-            }),
-            'flash' => session()->only(['success', 'error']),
-        ]);
-    }
-
-    public function generatePreview(Request $request)
-    {
-        $this->authorizeManage($request);
-        $d = $request->validate(['class_ids' => ['required', 'array', 'min:1', 'max:400'], 'class_ids.*' => ['integer', 'exists:classes,id']]);
-
-        $classes = SchoolClass::whereIn('id', $d['class_ids'])->get();
-        $result = $this->generator->run($classes, $this->generatorOptions($request) + ['seconds' => 20.0]);
-
-        // the preview of many classes is a summary: the cells stay on the server until they are applied
-        return response()->json(['seed' => $result['seed'], 'ok' => $result['ok'], 'classes' => collect($result['classes'])->map(fn ($r) => collect($r)->except('cells')->all())]);
-    }
-
-    public function generateApply(Request $request)
-    {
-        $this->authorizeManage($request);
-        $d = $request->validate(['class_ids' => ['required', 'array', 'min:1', 'max:400'], 'class_ids.*' => ['integer', 'exists:classes,id'], 'seed' => ['required', 'integer']]);
-
-        $classes = SchoolClass::whereIn('id', $d['class_ids'])->get();
-        $result = $this->generator->run($classes, $this->generatorOptions($request) + ['seconds' => 20.0]);
-        $r = $this->generator->apply($result, $classes, $request->boolean('keep_existing'));
-
-        return back()->with($r['skipped'] ? 'error' : 'success', "{$r['classes']} " . ($r['classes'] === 1 ? 'routine was' : 'routines were') . " made ({$r['applied']} periods)." . ($r['skipped'] ? ' Left out: ' . implode('; ', array_slice($r['skipped'], 0, 3)) : ' They are drafts: open one to adjust it, then publish.'));
-    }
-
     // ------------------------------------------------------------------
     // printing
     // ------------------------------------------------------------------
@@ -404,6 +370,10 @@ class RoutineController extends Controller
             'sets' => $sets,
             'days' => collect(RoutineService::WEEK_ORDER)->map(fn ($d) => ['id' => $d, 'name' => RoutineService::DAYS[$d]['en']])->values(),
             'working' => $this->routines->workingDays(),
+            // these classes do not follow this page: they have periods of their own
+            'ownClasses' => SchoolClass::whereIn('id', RoutinePeriod::whereNotNull('class_id')->select('class_id'))
+                ->orderByDesc('academic_year')->orderBy('class_name')->orderBy('section')->get()
+                ->map(fn ($c) => ['id' => $c->id, 'label' => $c->full_label, 'year' => $c->academic_year])->values(),
             'flash' => session()->only(['success', 'error']),
         ]);
     }
@@ -423,10 +393,6 @@ class RoutineController extends Controller
 
         $this->routines->savePeriods($d['shift_id'] ?? null, $d['periods']);
 
-        if ($clashes = count($this->routines->teacherClashes())) {
-            return back()->with('error', "The periods were saved, but {$clashes} " . ($clashes === 1 ? 'teacher is' : 'teachers are') . ' now in two classes at the same time. See the warning on the Class routines page.');
-        }
-
         return back()->with('success', 'The periods were saved.');
     }
 
@@ -434,7 +400,7 @@ class RoutineController extends Controller
     public function resetPeriods(Request $request, Shift $shift)
     {
         $this->authorizeManage($request);
-        RoutinePeriod::where('shift_id', $shift->id)->delete();
+        $this->routines->resetShiftPeriods($shift->id);
 
         return back()->with('success', "{$shift->name} now uses the common periods.");
     }
@@ -460,11 +426,15 @@ class RoutineController extends Controller
         $teacherId = $manage ? (int) $request->input('teacher', 0) : $request->user()->id;
         $published = $manage ? $request->input('source') !== 'draft' : true;
 
+        $years = $this->years();
+        $year = (string) $request->input('session', $years[0]);
+
         return Inertia::render('Routine/Teachers', [
+            'years' => $years, 'session' => $year,
             'teachers' => $manage ? User::where('role', User::ROLE_TEACHER)->where('status', User::STATUS_ACTIVE)->orderBy('name')->get(['id', 'name']) : [],
             'teacherId' => $teacherId ?: null,
             'source' => $published ? 'published' : 'draft',
-            'grid' => $teacherId ? $this->routines->teacherGrid($teacherId, $published) : null,
+            'grid' => $teacherId ? $this->routines->teacherGrid($teacherId, $published, $year) : null,
             'can' => ['manage' => $manage],
         ]);
     }
@@ -478,9 +448,9 @@ class RoutineController extends Controller
         $info = $school->school();
 
         return view('print.routine-teacher', [
-            'g' => $this->routines->teacherGrid($teacher->id, $published), 'lang' => $request->input('lang') === 'bn' ? 'bn' : 'en', 'published' => $published,
+            'g' => $this->routines->teacherGrid($teacher->id, $published, (string) $request->input('session', $this->years()[0])), 'lang' => $request->input('lang') === 'bn' ? 'bn' : 'en', 'published' => $published,
             'school' => $info, 'frameColor' => $info['color'], ...$this->paper($request), 'examTypes' => [], 'examValue' => '',
-            'keep' => [], 'teacherId' => $teacher->id,
+            'keep' => array_filter(['session' => $request->input('session')]), 'teacherId' => $teacher->id,
         ]);
     }
 }

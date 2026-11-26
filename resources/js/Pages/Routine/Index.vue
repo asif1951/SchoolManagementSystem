@@ -64,7 +64,7 @@ const badge = {
                     <ul class="mt-1 list-disc space-y-0.5 pl-5">
                         <li v-for="(c, i) in clashes.slice(0, 8)" :key="i">{{ c.teacher }}: {{ c.day }} {{ c.time }}, {{ c.classes }}</li>
                     </ul>
-                    <p class="mt-1 text-xs">This can happen after changing periods or breaks. Open one of the classes and give that period to another teacher.</p>
+                    <p class="mt-1 text-xs">These were saved before the rule was enforced. They cannot be published until one of the two periods is given to another teacher.</p>
                 </section>
 
                 <section class="panel mb-3 p-4">

@@ -127,7 +127,6 @@ const navigation = [
         children: [
             { name: 'Class Routines', icon: 'classes', route: '/routine', ability: ['routine.view', 'routine.manage'] },
             { name: 'Teacher Routines', icon: 'users', route: '/routine/teachers', ability: ['routine.view', 'routine.manage'] },
-            { name: 'Auto-generate', icon: 'classes', route: '/routine/generate', ability: 'routine.manage' },
             { name: 'Periods & Days', icon: 'classes', route: '/routine/periods', ability: 'routine.manage' },
         ]
     },

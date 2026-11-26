@@ -314,6 +314,7 @@ Route::middleware(['auth', 'verified', 'active'])->group(function () {
         Route::get('/classes/{class}', [RoutineController::class, 'editor'])->whereNumber('class')->name('editor');
         Route::get('/classes/{class}/print', [RoutineController::class, 'print'])->whereNumber('class')->name('print');
         Route::put('/classes/{class}/cell', [RoutineController::class, 'cell'])->whereNumber('class')->middleware('throttle:240,1')->name('cell');
+        Route::put('/classes/{class}/cells', [RoutineController::class, 'cells'])->whereNumber('class')->name('cells');
         Route::post('/classes/{class}/copy-day', [RoutineController::class, 'copyDay'])->whereNumber('class')->name('copy-day');
         Route::post('/classes/{class}/copy-from', [RoutineController::class, 'copyFrom'])->whereNumber('class')->name('copy-from');
         Route::delete('/classes/{class}/cells', [RoutineController::class, 'clear'])->whereNumber('class')->name('clear');
@@ -322,9 +323,6 @@ Route::middleware(['auth', 'verified', 'active'])->group(function () {
         Route::put('/classes/{class}/plan', [RoutineController::class, 'savePlan'])->whereNumber('class')->name('plan.save');
         Route::post('/classes/{class}/auto', [RoutineController::class, 'autoPreview'])->whereNumber('class')->middleware('throttle:60,1')->name('auto.preview');
         Route::post('/classes/{class}/auto/apply', [RoutineController::class, 'autoApply'])->whereNumber('class')->middleware('throttle:30,1')->name('auto.apply');
-        Route::get('/generate', [RoutineController::class, 'generatePage'])->name('generate');
-        Route::post('/generate/preview', [RoutineController::class, 'generatePreview'])->middleware('throttle:20,1')->name('generate.preview');
-        Route::post('/generate/apply', [RoutineController::class, 'generateApply'])->middleware('throttle:10,1')->name('generate.apply');
         Route::post('/classes/{class}/publish', [RoutineController::class, 'publish'])->whereNumber('class')->name('publish');
         Route::delete('/classes/{class}/publish', [RoutineController::class, 'unpublish'])->whereNumber('class')->name('unpublish');
     });

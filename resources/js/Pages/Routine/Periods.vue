@@ -8,6 +8,7 @@ const props = defineProps({
     sets: { type: Array, default: () => [] },
     days: { type: Array, default: () => [] },
     working: { type: Array, default: () => [] },
+    ownClasses: { type: Array, default: () => [] },
     flash: { type: Object, default: () => ({}) },
     errors: { type: Object, default: () => ({}) },
 })
@@ -67,6 +68,8 @@ const save = () => {
 const useCommon = () => router.delete(route('routine.periods.reset', current.value), { preserveScroll: true, onSuccess: () => { delete draft[key(current.value)] } })
 const startOwn = () => { draft[key(current.value)] = (common.value?.periods || []).map((p) => ({ ...p })); started[current.value] = true }
 
+const followAgain = (c) => router.delete(route('routine.class-periods.reset', c.id), { preserveScroll: true, preserveState: true })
+
 const workingDays = ref([...props.working])
 const saveDays = () => router.put(route('routine.days.save'), { days: workingDays.value }, { preserveScroll: true })
 
@@ -100,6 +103,17 @@ const shiftName = (id) => props.shifts.find((s) => s.id === id)?.name
                         <label v-for="d in days" :key="d.id" class="inline-flex items-center gap-1.5 text-sm"><input v-model="workingDays" type="checkbox" :value="d.id" class="rounded border-slate-300 text-brand-700 focus:ring-brand-600" />{{ d.name }}</label>
                         <button type="button" class="btn btn-primary" :disabled="!workingDays.length" @click="saveDays">Save days</button>
                     </div>
+                </section>
+
+                <!-- classes this page does not change -->
+                <section v-if="ownClasses.length" class="mb-5 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                    <p class="font-semibold">{{ ownClasses.length }} {{ ownClasses.length === 1 ? 'class has' : 'classes have' }} periods of their own. Changes on this page do not reach them.</p>
+                    <ul class="mt-2 max-h-48 space-y-1 overflow-auto">
+                        <li v-for="c in ownClasses" :key="c.id" class="flex flex-wrap items-center justify-between gap-2">
+                            <Link :href="route('routine.editor', c.id)" class="underline">{{ c.label }} · {{ c.year }}</Link>
+                            <button type="button" class="font-medium text-brand-700 hover:underline" @click="followAgain(c)">Follow this page again</button>
+                        </li>
+                    </ul>
                 </section>
 
                 <!-- periods -->
