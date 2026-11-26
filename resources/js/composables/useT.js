@@ -5,11 +5,11 @@ import { usePage } from '@inertiajs/vue3'
  * The labels come from lang/en/student.php or lang/bn/student.php, chosen by the language switch.
  * An unknown key shows the key itself, so a missing translation is visible instead of blank.
  */
-export function useT() {
+export function useT(namespace = 'student') {
     const page = usePage()
 
     return (key, params = {}) => {
-        const dict = page.props.i18n?.student ?? {}
+        const dict = page.props.i18n?.[namespace] ?? {}
         let value = key.split('.').reduce((node, part) => (node == null ? node : node[part]), dict)
 
         if (typeof value !== 'string') {

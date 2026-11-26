@@ -52,6 +52,17 @@ return [
             'routine.manage' => ['label' => 'Make, edit and publish routines; set periods and working days',                   'scoped' => false],
         ],
 
+        'Teaching Plan' => [
+            'teaching.own'        => ['label' => 'Own teaching plans, daily log and lesson plans',              'scoped' => false],
+            'teaching.view_all'   => ['label' => "See every teacher's plans, logs, progress and reports",       'scoped' => false],
+            'teaching.manage_all' => ['label' => "Create and edit any teacher's plans and logs",                'scoped' => false],
+            'teaching.approve'    => ['label' => 'Approve or return yearly teaching plans',                     'scoped' => false],
+            'teaching.review'     => ['label' => "Leave review comments on a teacher's progress",               'scoped' => false],
+            'teaching.edit_past'  => ['label' => 'Edit daily logs older than the allowed number of days',       'scoped' => false],
+            'teaching.syllabus'   => ['label' => 'Manage the Syllabus Master',                                  'scoped' => false],
+            'teaching.settings'   => ['label' => 'Teaching Plan settings, holidays and personal permissions',   'scoped' => false],
+        ],
+
         'Classes' => [
             'classes.view'   => ['label' => 'View classes',                       'scoped' => true],
             'subjects.manage' => ['label' => 'Manage the academic setup: subjects, study groups and curriculum templates', 'scoped' => false],
@@ -124,6 +135,16 @@ return [
                 'promotion.propose:own',
                 'fees.view_dues:own',
                 'routine.view',
+                'teaching.own',
+            ],
+        ],
+
+        'head_teacher' => [
+            'name'      => 'Head Teacher',
+            'description' => 'Follows the teaching of the whole school: plans, daily logs and progress; approves and reviews.',
+            'abilities' => [
+                'teaching.own', 'teaching.view_all', 'teaching.approve', 'teaching.review', 'teaching.syllabus', 'teaching.edit_past',
+                'classes.view', 'students.view', 'routine.view',
             ],
         ],
 

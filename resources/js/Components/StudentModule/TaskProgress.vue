@@ -9,6 +9,7 @@ import { useT } from '@/composables/useT'
 const props = defineProps({
     taskId: { type: Number, required: true },
     initial: { type: Object, default: null },
+    routeName: { type: String, default: 'sm.tasks.show' },
 })
 const emit = defineEmits(['finished'])
 
@@ -20,7 +21,7 @@ const isOver = (s) => s === 'done' || s === 'failed'
 
 const poll = async () => {
     try {
-        const res = await fetch(route('sm.tasks.show', props.taskId), { headers: { Accept: 'application/json' }, credentials: 'same-origin' })
+        const res = await fetch(route(props.routeName, props.taskId), { headers: { Accept: 'application/json' }, credentials: 'same-origin' })
         if (res.ok) {
             task.value = await res.json()
         }

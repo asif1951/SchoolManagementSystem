@@ -299,6 +299,9 @@ Route::middleware(['auth', 'verified', 'active'])->group(function () {
         Route::delete('/student-results/reset-shift/{recordId}', [StudentResultController::class, 'resetShift'])->name('student.results.reset-shift');
     });
 
+    // TEACHING PLAN (syllabus, yearly plans, daily log, progress)
+    require __DIR__ . '/teaching.php';
+
     // ========================================================
     // ROUTINE (class timetables)
     // ========================================================

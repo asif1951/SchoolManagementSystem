@@ -83,6 +83,10 @@ const schoolLogo = computed(() => {
 // ============================================================
 // Each item names the ability it needs (see config/abilities.php).
 // A parent with no visible children is hidden.
+// anyone who uses the Teaching Plan module in any way
+const TEACHING = ['teaching.own', 'teaching.view_all', 'teaching.manage_all', 'teaching.approve', 'teaching.review'];
+const TEACHING_ALL = ['teaching.view_all', 'teaching.manage_all', 'teaching.approve', 'teaching.review'];
+
 const navigation = [
     { name: 'Dashboard', icon: 'dashboard', route: '/dashboard', ability: 'dashboard.view' },
     {
@@ -128,6 +132,19 @@ const navigation = [
             { name: 'Class Routines', icon: 'classes', route: '/routine', ability: ['routine.view', 'routine.manage'] },
             { name: 'Teacher Routines', icon: 'users', route: '/routine/teachers', ability: ['routine.view', 'routine.manage'] },
             { name: 'Periods & Days', icon: 'classes', route: '/routine/periods', ability: 'routine.manage' },
+        ]
+    },
+    {
+        name: 'Teaching Plan',
+        icon: 'results',
+        route: '/teaching',
+        ability: TEACHING,
+        children: [
+            { name: 'Today (Daily Log)', icon: 'attendance', route: '/teaching/log', ability: ['teaching.own', 'teaching.manage_all'] },
+            { name: 'School Overview', icon: 'dashboard', route: '/teaching', ability: TEACHING_ALL },
+            { name: 'Plans', icon: 'classes', route: '/teaching/plans', ability: TEACHING },
+            { name: 'Progress & Reports', icon: 'results', route: '/teaching/progress', ability: TEACHING },
+            { name: 'Setup', icon: 'classes', route: '/teaching/syllabus', ability: ['teaching.syllabus', 'teaching.settings'] },
         ]
     },
     { name: 'Exams', icon: 'results', route: '/exams', ability: 'exams.manage' },

@@ -101,3 +101,21 @@ adds, on top of the demo school: an accountant account, a BRN for about two stud
 - Statistics are cached for two minutes (press *Refresh*).
 - Guardian details live on the student; there is no separate guardian record or sibling logic.
 - The older pages (Students, Student Management) still exist beside the Student Module.
+
+## Teaching Plan
+
+Yearly teaching plans made from a shared syllabus, a daily teaching log linked to the class routine, weekly and monthly
+views, progress against the calendar, lesson plans, dashboards and reports (menu: **Teaching Plan**).
+
+Setting it up on a server:
+
+1. `php artisan migrate --force` (adds the tables, the `teaching.*` permissions and a "Head Teacher" role).
+2. Upload `public/build` (or run `npm run build`).
+3. Keep the queue worker cron running (imports, exports, bulk scheduling and the daily progress refresh use it).
+4. In **Users**, give the head teacher the "Head Teacher" role. In **Teaching Settings**, enter holidays and choose whether plans need approval.
+5. Add the syllabus (**Syllabus Master**), then teachers make their plans in one tap and press **Auto-schedule**.
+
+Demo data (adds to the current school, safe to repeat): `php artisan db:seed --class=TeachingPlanDemoSeeder`
+
+Tests: `php artisan test --filter=Teaching`
+

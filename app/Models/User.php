@@ -70,6 +70,7 @@ class User extends Authenticatable
     protected $hidden = [
         'password',
         'remember_token',
+        'extra_abilities',
     ];
 
     /**
@@ -82,6 +83,7 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password'          => 'hashed',
+            'extra_abilities'   => 'array',
         ];
     }
 
@@ -137,7 +139,10 @@ class User extends Authenticatable
             return ['*'];
         }
 
-        return \App\Models\Role::abilityMap()[$this->role] ?? [];
+        $role = \App\Models\Role::abilityMap()[$this->role] ?? [];
+
+        // permissions given to this one person on top of the role (never mass assignable)
+        return $this->extra_abilities ? array_values(array_unique([...$role, ...$this->extra_abilities])) : $role;
     }
 
     /** True if the role grants the ability in ANY scope (whole school or own classes only). */
@@ -294,6 +299,7 @@ class User extends Authenticatable
         return match (true) {
             $this->hasAbility('dashboard.view') => '/dashboard',
             $this->hasAbility('fees.collect')   => '/fees',
+            $this->hasAbility('teaching.view_all') => '/teaching',
             $this->hasAbility('students.view')  => '/students',
             $this->hasAbility('attendance.view') => '/attendance',
             default                              => '/',

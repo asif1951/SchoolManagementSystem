@@ -58,6 +58,12 @@ final class Normalize
      * A value that is safe to put in a spreadsheet cell. A cell that starts with = + - @ (or a tab / return) is run
      * as a formula by Excel; a leading apostrophe turns it back into plain text. Used on every export and error report.
      */
+    /** a text a spreadsheet would run as a formula (refused on import) */
+    public static function looksLikeFormula(string $text): bool
+    {
+        return $text !== '' && strpbrk($text[0], '=+@' . chr(9) . chr(13)) !== false;
+    }
+
     public static function csvCell($value): string
     {
         $text = (string) ($value ?? '');
