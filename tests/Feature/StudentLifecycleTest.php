@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Models\Attendance;
 use App\Models\AuditLog;
 use App\Models\ResultInput;
 use App\Models\SchoolClass;
@@ -17,7 +16,7 @@ use Tests\TestCase;
 
 class StudentLifecycleTest extends TestCase
 {
-    use RefreshDatabase, MakesSchoolData;
+    use RefreshDatabase, MakesSchoolData, \Tests\Concerns\RecordsAttendance;
 
     private User $admin;
     private SchoolClass $class;
@@ -128,7 +127,7 @@ class StudentLifecycleTest extends TestCase
         $this->marks($withMarks);
 
         $withAttendance = $this->makeStudent($this->class, 'Has Attendance');
-        Attendance::create(['student_id' => $withAttendance->id, 'class_id' => $this->class->id, 'attendance_date' => now()->toDateString(), 'status' => 'present', 'academic_year' => (string) $this->class->academic_year]);
+        $this->recordAttendance($withAttendance, now()->toDateString(), 'present');
 
         foreach ([$withMarks, $withAttendance] as $kid) {
             $this->actingAs($this->admin)->delete("/students/{$kid->id}")

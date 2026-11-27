@@ -77,8 +77,8 @@ class RolesAndPermissionsTest extends TestCase
     {
         [$teacher, $mine, $other] = $this->teacherWithClass();
 
-        $this->actingAs($teacher)->get("/attendance/class/{$mine->id}")->assertOk();
-        $this->actingAs($teacher)->get("/attendance/class/{$other->id}")->assertForbidden();
+        $this->actingAs($teacher)->get("/attendance?class={$mine->id}")->assertOk();
+        $this->actingAs($teacher)->get("/attendance?class={$other->id}")->assertForbidden();
         $this->actingAs($teacher)->get("/results/class/{$other->id}")->assertForbidden();
         $this->actingAs($teacher)->get("/student-results/class/{$other->id}")->assertForbidden();
     }

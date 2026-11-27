@@ -4,6 +4,7 @@ import LanguageSwitch from '@/Components/StudentModule/LanguageSwitch.vue'
 import { Head, Link, router } from '@inertiajs/vue3'
 import { reactive, ref } from 'vue'
 import { useT } from '@/composables/useT'
+import ProfileCard from '@/Components/Attendance/ProfileCard.vue'
 
 const props = defineProps({
     profile: { type: Object, required: true },
@@ -132,6 +133,8 @@ const badge = (status) => (status === 'active'
                         </div>
                     </dl>
                 </section>
+
+                <ProfileCard v-if="enrollments.length" :enrollments="enrollments" />
 
                 <!-- enrollment history -->
                 <section class="mb-5 overflow-hidden rounded-md border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">

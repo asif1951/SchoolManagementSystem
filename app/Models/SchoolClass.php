@@ -705,8 +705,8 @@ class SchoolClass extends Model
         return $this->hasMany(Student::class, 'class_id');
     }
 
-    public function attendances()
+    public function attendanceSessions()
     {
-        return $this->hasMany(Attendance::class, 'class_id');
+        return $this->hasMany(\App\Models\Attendance\Session::class, 'class_id');
     }
 }

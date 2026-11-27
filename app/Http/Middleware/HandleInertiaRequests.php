@@ -41,7 +41,11 @@ class HandleInertiaRequests extends Middleware
             // the student module's labels (English or Bangla, per the user's choice); sent only on its own pages
             'locale' => app()->getLocale(),
             'i18n'   => fn () => match (true) {
-                $request->is('student-module*'), $request->is('apply') => ['student' => trans('student')],
+                // the student profile also carries an attendance box
+                $request->is('student-module/students/*') => ['student' => trans('student'), 'attendance' => trans('attendance')],
+                $request->is('student-module*') => ['student' => trans('student')],
+                $request->is('apply') => ['student' => trans('student')],
+                $request->is('attendance*') => ['attendance' => trans('attendance'), 'student' => \Illuminate\Support\Arr::only(trans('student'), ['queued', 'working', 'finished', 'failed'])],
                 // the progress bar of background tasks is shared with the student module: it needs its few words too
                 $request->is('teaching*') => ['teaching' => trans('teaching'), 'student' => \Illuminate\Support\Arr::only(trans('student'), ['queued', 'working', 'finished', 'failed'])],
                 default => null,

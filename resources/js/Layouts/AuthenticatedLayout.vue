@@ -155,7 +155,20 @@ const navigation = [
     { name: 'Curriculum', icon: 'classes', route: '/curriculum', ability: 'subjects.manage' },
     { name: 'Users', icon: 'users', route: '/users', ability: 'users.manage' },
     { name: 'Roles & Permissions', icon: 'users', route: '/roles', ability: 'roles.manage' },
-    { name: 'Attendance', icon: 'attendance', route: '/attendance', ability: 'attendance.view' },
+    {
+        name: 'Attendance',
+        icon: 'attendance',
+        route: '/attendance',
+        ability: ['attendance.view', 'attendance.take', 'attendance.reports', 'attendance.leave', 'attendance.leave_approve', 'attendance.settings'],
+        children: [
+            { name: 'Take Attendance', icon: 'attendance', route: '/attendance', ability: ['attendance.take', 'attendance.view'] },
+            { name: 'Attendance Records', icon: 'classes', route: '/attendance/records', ability: 'attendance.view' },
+            { name: 'Attendance Register', icon: 'classes', route: '/attendance/register', ability: 'attendance.view' },
+            { name: 'Student Leave', icon: 'classes', route: '/attendance/leave', ability: ['attendance.leave', 'attendance.leave_approve'] },
+            { name: 'Reports', icon: 'results', route: '/attendance/reports', ability: 'attendance.reports' },
+            { name: 'Settings', icon: 'classes', route: '/attendance/settings', ability: 'attendance.settings' },
+        ],
+    },
     { name: 'Gallery', icon: 'gallery', route: '/gallery', ability: 'gallery.manage' },
     { name: 'Result Input', icon: 'results', route: '/results', ability: 'results.view' },
     {

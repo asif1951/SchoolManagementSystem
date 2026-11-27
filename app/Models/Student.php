@@ -104,6 +104,16 @@ class Student extends Model
             }
         });
 
+        // a change of class inside a session is remembered, so attendance rosters of earlier dates stay right
+        static::updated(function (Student $student) {
+            if ($student->wasChanged('class_id') && $student->getOriginal('class_id')) {
+                \Illuminate\Support\Facades\DB::table('student_class_moves')->insert([
+                    'student_id' => $student->id, 'from_class_id' => $student->getOriginal('class_id'), 'to_class_id' => $student->class_id,
+                    'moved_on' => now('Asia/Dhaka')->toDateString(), 'created_at' => now(), 'updated_at' => now(),
+                ]);
+            }
+        });
+
         // a personal field edited on an enrollment row is an edit of the child's profile
         static::updated(function (Student $student) {
             if (! $student->profile_id) {
@@ -197,7 +207,8 @@ class Student extends Model
 
         return array_filter([
             'marks'            => $count('results'),
-            'attendance days'  => $count('attendances'),
+            'attendance days'  => $count('attendance_records') + $count('attendances'),
+            'leave applications' => $count('student_leaves'),
             'fee payments'     => \Illuminate\Support\Facades\Schema::hasTable('fee_payments') ? $count('fee_payments') : 0,
             'later-year records' => $count('students', 'promoted_from_id'),
         ]);
@@ -331,9 +342,9 @@ class Student extends Model
         return $this->belongsTo(SchoolClass::class, 'class_id');
     }
 
-    public function attendances()
+    public function attendanceRecords()
     {
-        return $this->hasMany(Attendance::class);
+        return $this->hasMany(\App\Models\Attendance\Record::class);
     }
 
     public function results()

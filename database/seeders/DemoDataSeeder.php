@@ -46,7 +46,7 @@ class DemoDataSeeder extends Seeder
             ["Classes in {$year}", SchoolClass::where('academic_year', $year)->count()],
             ["Students in {$year}", Student::where('academic_year', (int) $year)->count()],
             ['Subject marks entered', \App\Models\ResultInput::where('academic_year', $year)->count()],
-            ['Attendance records', \App\Models\Attendance::where('academic_year', $year)->count()],
+            ['Attendance records', \App\Models\Attendance\Session::where('academic_year', $year)->join('attendance_records', 'attendance_records.session_id', '=', 'attendance_sessions.id')->count()],
         ]);
     }
 }

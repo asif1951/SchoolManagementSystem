@@ -2,7 +2,7 @@
 
 namespace App\Services;
 
-use App\Models\Attendance;
+use App\Services\Attendance\Calculator;
 use App\Models\GradingScale;
 use App\Models\ResultInput;
 use App\Models\ResultPolicy;
@@ -86,21 +86,11 @@ class TabulationBuilder
             ->groupBy('student_id')
             ->map(fn ($rows) => $rows->pluck('marks', 'subject')->map(fn ($m) => (float) $m)->all());
 
-        // ---- attendance -----------------------------------------------------------------
-        // holidays and closed days of the calendar count for nobody (weekly off days are left as recorded)
-        $span = Attendance::query()->where('class_id', $class->id)->where('academic_year', $year)->selectRaw('MIN(attendance_date) a, MAX(attendance_date) b')->first();
-        $closed = $span?->a ? app(AcademicCalendar::class)->holidayDays(substr((string) $span->a, 0, 10), substr((string) $span->b, 0, 10), $class->id) : [];
-
-        $workingDays = (int) Attendance::query()
-            ->where('class_id', $class->id)->where('academic_year', $year)->whereNotIn('attendance_date', $closed)
-            ->distinct()->count('attendance_date');
-
-        $attendance = Attendance::query()
-            ->where('class_id', $class->id)->where('academic_year', $year)->whereNotIn('attendance_date', $closed)
-            ->selectRaw("student_id, SUM(status IN ('present','late')) AS present, SUM(status = 'absent') AS absent, SUM(status = 'leave') AS on_leave")
-            ->groupBy('student_id')
-            ->get()
-            ->keyBy('student_id');
+        // ---- attendance (the attendance module's own calculation) ------------------------
+        $session = ['from' => substr($year, 0, 4) . '-01-01', 'to' => substr($year, 0, 4) . '-12-31', 'class_ids' => [$class->id]];
+        $calculator = app(Calculator::class);
+        $attendance = $calculator->students($session);
+        $workingDays = (int) $calculator->query($session)->distinct()->count('r.date');
 
         $attendanceMarks = (float) $policy->attendance_marks;
         $topPoint        = (float) $scale->rows->max('grade_point');
@@ -131,9 +121,11 @@ class TabulationBuilder
             }
 
             // attendance
-            $att      = $attendance->get($student->id);
-            $present  = (int) ($att->present ?? 0);
-            $percent  = $workingDays > 0 ? round($present / $workingDays * 100, 1) : null;
+            // days attended (a period-wise day counts by the share of its periods attended)
+            $att      = $attendance[$student->id] ?? null;
+            $days     = $att ? round($att['attended_days'], 1) : 0;
+            $present  = $days == (int) $days ? (int) $days : $days;
+            $percent  = $att && $att['percent'] !== null ? round($att['percent'], 1) : null;
             $attMarks = ($attendanceMarks > 0 && $percent !== null) ? round($percent / 100 * $attendanceMarks, 1) : 0.0;
 
             $result = $this->evaluate($counted, $policy, $scale, $topPoint);

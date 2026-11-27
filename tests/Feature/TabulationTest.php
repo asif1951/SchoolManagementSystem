@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Models\Attendance;
 use App\Models\ResultInput;
 use App\Models\ResultPolicy;
 use App\Models\SchoolClass;
@@ -17,7 +16,7 @@ use Tests\TestCase;
 
 class TabulationTest extends TestCase
 {
-    use RefreshDatabase, MakesSchoolData;
+    use RefreshDatabase, MakesSchoolData, \Tests\Concerns\RecordsAttendance;
 
     private User $teacher;
     private SchoolClass $class;
@@ -202,10 +201,7 @@ class TabulationTest extends TestCase
     private function attendance(Student $student, array $statuses): void
     {
         foreach ($statuses as $i => $status) {
-            Attendance::create([
-                'student_id' => $student->id, 'class_id' => $student->class_id, 'attendance_date' => now()->subDays($i + 1)->toDateString(),
-                'status' => $status, 'academic_year' => (string) $this->class->academic_year,
-            ]);
+            $this->recordAttendance($student, now()->subDays($i + 1)->toDateString(), $status);
         }
     }
 

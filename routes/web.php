@@ -1,6 +1,5 @@
 <?php
 
-use App\Http\Controllers\AttendanceController;
 use App\Http\Controllers\ClassesmanagementController;
 use App\Http\Controllers\CollectFeesController;
 use App\Http\Controllers\ContactMessageController;
@@ -256,16 +255,8 @@ Route::middleware(['auth', 'verified', 'active'])->group(function () {
         Route::get('/classesmanagement', [ClassesmanagementController::class, 'index'])->name('classesmanagement.index');
     });
 
-    // ========================================================
-    // ATTENDANCE
-    // ========================================================
-    Route::post('/attendance/store', [AttendanceController::class, 'store'])->middleware('can:attendance.take')->name('attendance.store');
-
-    Route::middleware('can:attendance.view')->group(function () {
-        Route::get('/attendance', [AttendanceController::class, 'index'])->name('attendance.index');
-        Route::get('/attendance/class/{classId}', [AttendanceController::class, 'show'])->name('attendance.show');
-        Route::get('/attendance/{class}/records', [AttendanceController::class, 'records'])->name('attendance.records');
-    });
+    // ATTENDANCE (take, records, register, leave, reports, printing, settings)
+    require __DIR__ . '/attendance.php';
 
     // ========================================================
     // RESULTS

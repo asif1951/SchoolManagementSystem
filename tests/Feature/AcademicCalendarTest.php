@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Models\Attendance;
 use App\Models\AuditLog;
 use App\Models\CalendarEvent;
 use App\Models\Exam;
@@ -24,7 +23,7 @@ use Tests\TestCase;
 
 class AcademicCalendarTest extends TestCase
 {
-    use RefreshDatabase, MakesTeachingData;
+    use RefreshDatabase, MakesTeachingData, \Tests\Concerns\RecordsAttendance;
 
     protected function setUp(): void
     {
@@ -201,29 +200,25 @@ class AcademicCalendarTest extends TestCase
     {
         $class = $this->class;
         $student = $this->makeStudent($class);
-        $mark = fn (string $date, string $status) => Attendance::create(['student_id' => $student->id, 'class_id' => $class->id, 'attendance_date' => $date, 'status' => $status, 'academic_year' => '2026', 'marked_by' => $this->admin->id]);
-        $mark('2026-03-08', 'present');
-        $mark('2026-03-09', 'absent');                                                // later declared closed
+        $student->update(['admission_date' => '2026-01-01']);
+        $this->recordAttendance($student, '2026-03-08', 'present');
+        $this->recordAttendance($student, '2026-03-09', 'absent');                       // later declared closed
 
         $this->event(['type' => 'closure', 'title' => 'Flood', 'starts_on' => '2026-03-09']);
 
-        $this->actingAs($this->admin)->post(route('attendance.store'), ['class_id' => $class->id, 'date' => '2026-03-09', 'attendance' => [['student_id' => $student->id, 'status' => 'absent']]])
-            ->assertSessionHas('error', fn ($m) => str_contains($m, 'Flood'));
-        // a weekly off day only warns on screen: a class really held can be recorded, and stays counted
-        $this->actingAs($this->admin)->post(route('attendance.store'), ['class_id' => $class->id, 'date' => '2026-03-07', 'attendance' => [['student_id' => $student->id, 'status' => 'present']]])
-            ->assertSessionHas('success');
+        $send = fn ($who, string $date) => $this->actingAs($who)->post(route('attendance.store'), ['class_id' => $class->id, 'date' => $date, 'revision' => $date === '2026-03-09' ? 1 : null,
+            'entries' => [['student_id' => $student->id, 'status' => 'present']]]);
+        // a teacher cannot write on a closed day or a weekly off day
+        $class->update(['class_teacher_id' => $this->teacher->id]);
+        $send($this->teacher->fresh(), '2026-03-09')->assertSessionHasErrors('attendance');
+        // with the override permission it can be recorded, but it is never counted
+        $send($this->admin, '2026-03-13')->assertSessionHasNoErrors();
 
-        $this->actingAs($this->admin)->get(route('attendance.show', ['classId' => $class->id, 'date' => '2026-03-09']))->assertInertia(fn (Assert $p) => $p
-            ->where('schoolDay.working', false)->where('students.data.0.stats.absent_days', fn ($v) => (int) $v === 0)->where('students.data.0.stats.total_days', fn ($v) => (int) $v === 2));
-
-        $json = $this->actingAs($this->admin)->getJson(route('attendance.records', ['class' => $class->id, 'period' => 'custom', 'from' => '2026-03-01', 'to' => '2026-03-14']))->assertOk()->json();
-        $this->assertSame(0, $json['summary']['absent']);
-        $this->assertSame(2, $json['summary']['total']);
-
-        $sheet = app(TabulationBuilder::class)->build($class, 'Half yearly');
-        $row = $sheet['rows'][0] ?? null;
-        $this->assertNotNull($row);
-        $this->assertStringNotContainsString('"absent":1', json_encode($row));
+        $row = app(\App\Services\Attendance\Calculator::class)->students(['from' => '2026-03-01', 'to' => '2026-03-14', 'class_ids' => [$class->id]])[$student->id];
+        $this->assertSame(1, $row['total']);
+        $this->assertSame(0, $row['absent']);
+        $this->assertSame(1, app(TabulationBuilder::class)->build($class, 'Half yearly')['working_days']);
+        $this->assertSame(3, \App\Models\Attendance\Record::count());                   // nothing is thrown away
     }
 
     public function test_an_emergency_closure_with_a_makeup_day_updates_teaching_plans(): void

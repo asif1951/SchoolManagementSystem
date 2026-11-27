@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Models\Attendance;
 use App\Models\GradingScale;
 use App\Models\ResultInput;
 use App\Models\ResultPolicy;
@@ -20,7 +19,7 @@ use Tests\TestCase;
 
 class ResultReportsTest extends TestCase
 {
-    use RefreshDatabase, MakesSchoolData;
+    use RefreshDatabase, MakesSchoolData, \Tests\Concerns\RecordsAttendance;
 
     private User $teacher;
     private User $admin;
@@ -99,8 +98,7 @@ class ResultReportsTest extends TestCase
     public function test_attendance_marks_appear_on_the_marksheet_when_they_count(): void
     {
         foreach (range(1, 10) as $d) {
-            Attendance::create(['student_id' => $this->s[1]->id, 'class_id' => $this->class->id, 'attendance_date' => now()->subDays($d)->toDateString(),
-                'status' => $d <= 9 ? 'present' : 'absent', 'academic_year' => (string) $this->class->academic_year]);
+            $this->recordAttendance($this->s[1], now()->subDays($d)->toDateString(), $d <= 9 ? 'present' : 'absent');
         }
 
         $this->open("/reports/marksheet/student/{$this->s[1]->id}")->assertOk()->assertDontSee('Attendance marks')->assertSee('90%');

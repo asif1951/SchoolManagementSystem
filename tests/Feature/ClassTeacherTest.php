@@ -81,12 +81,12 @@ class ClassTeacherTest extends TestCase
         $other = $this->makeUser(User::ROLE_TEACHER, ['name' => 'Asif']);   // same name, different person
         $class = $this->makeClass(teacher: $asif);
 
-        $this->actingAs($other)->get("/attendance/class/{$class->id}")->assertForbidden();
-        $this->actingAs($asif)->get("/attendance/class/{$class->id}")->assertOk();
+        $this->actingAs($other)->get("/attendance?class={$class->id}")->assertForbidden();
+        $this->actingAs($asif)->get("/attendance?class={$class->id}")->assertOk();
 
         // Renaming the teacher must not lock them out.
         $asif->update(['name' => 'Asif Rahman']);
-        $this->actingAs($asif->fresh())->get("/attendance/class/{$class->id}")->assertOk();
+        $this->actingAs($asif->fresh())->get("/attendance?class={$class->id}")->assertOk();
     }
 
     public function test_admin_changes_teacher_through_the_class_screen_and_history_is_written(): void

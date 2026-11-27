@@ -2,7 +2,8 @@
 
 namespace Database\Seeders;
 
-use App\Models\Attendance;
+use App\Models\Attendance\Record;
+use App\Models\Attendance\Session;
 use App\Models\SchoolClass;
 use App\Models\Student;
 use Illuminate\Database\Seeder;
@@ -39,43 +40,48 @@ class AttendanceSeeder extends Seeder
         $total = 0;
 
         foreach (SchoolClass::query()->where('academic_year', $year)->orderBy('id')->get() as $class) {
-            if (Attendance::where('class_id', $class->id)->exists()) {
+            if (Session::where('class_id', $class->id)->exists()) {
                 continue;
             }
 
-            $batch = [];
+            $habits = [];
 
             foreach (Student::query()->where('class_id', $class->id)->where('status', 'active')->pluck('id') as $studentId) {
-                $habit = mt_rand(78, 100) / 100;            // chance this student is present on a given day
+                $habits[$studentId] = mt_rand(78, 100) / 100;          // chance this student is present on a given day
+            }
 
-                foreach ($days as $date) {
+            if (! $habits) {
+                continue;
+            }
+
+            foreach ($days as $date) {
+                $session = Session::create([
+                    'class_id' => $class->id, 'academic_year' => $year, 'date' => $date, 'mode' => 'daily', 'slot_key' => 0,
+                    'taken_by' => $class->class_teacher_id, 'submitted_at' => $date . ' 10:00:00',
+                ]);
+                $batch = [];
+
+                foreach ($habits as $studentId => $habit) {
                     $roll = mt_rand(1, 1000) / 1000;
 
-                    $status = match (true) {
-                        $roll <= $habit             => 'present',
-                        $roll <= $habit + 0.04      => 'late',
-                        $roll <= $habit + 0.06      => 'leave',
-                        default                     => 'absent',
-                    };
-
                     $batch[] = [
-                        'student_id'      => $studentId,
-                        'class_id'        => $class->id,
-                        'attendance_date' => $date,
-                        'status'          => $status,
-                        'academic_year'   => $year,
-                        'marked_by'       => $class->class_teacher_id,
-                        'created_at'      => $now,
-                        'updated_at'      => $now,
+                        'session_id' => $session->id, 'student_id' => $studentId, 'class_id' => $class->id, 'date' => $date, 'slot_key' => 0,
+                        'status' => match (true) {
+                            $roll <= $habit        => 'present',
+                            $roll <= $habit + 0.04 => 'late',
+                            $roll <= $habit + 0.06 => 'leave',
+                            default                => 'absent',
+                        },
+                        'created_at' => $now, 'updated_at' => $now,
                     ];
                 }
-            }
 
-            foreach (array_chunk($batch, 1000) as $chunk) {
-                Attendance::upsert($chunk, ['student_id', 'attendance_date'], ['class_id', 'status', 'academic_year', 'marked_by', 'updated_at']);
-            }
+                foreach (array_chunk($batch, 1000) as $chunk) {
+                    Record::insert($chunk);
+                }
 
-            $total += count($batch);
+                $total += count($batch);
+            }
         }
 
         $this->command?->info("Attendance: {$total} records for the last " . self::SCHOOL_DAYS . ' school days.');

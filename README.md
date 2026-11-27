@@ -133,3 +133,9 @@ Other code asks `App\Services\AcademicCalendar`: `isWorkingDay()`, `workingDays(
 
 Tests: `php artisan test --filter=AcademicCalendar`
 
+## Attendance
+
+Take Attendance, Records, Register, Student Leave, Reports and Settings (sidebar → Attendance). Daily or period-wise per class, taken from the class routine and the Academic Calendar. Printable daily, single-period and full-day sheets.
+
+On the server: upload the files including `public/build` and `public/fonts`, back up the database, run `php artisan migrate --force` (copies old attendance into the new tables), clear the route and config cache, and keep the queue cron job running (large exports).
+

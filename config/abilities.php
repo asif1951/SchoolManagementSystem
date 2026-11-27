@@ -76,8 +76,17 @@ return [
         ],
 
         'Attendance' => [
-            'attendance.view' => ['label' => 'View attendance and records', 'scoped' => true],
-            'attendance.take' => ['label' => 'Take / edit attendance',      'scoped' => true],
+            'attendance.view'             => ['label' => 'View attendance, records and the register',                      'scoped' => true],
+            'attendance.take'             => ['label' => 'Take attendance',                                                'scoped' => true],
+            'attendance.edit'             => ['label' => 'Correct submitted attendance within the allowed days',           'scoped' => true],
+            'attendance.edit_old'         => ['label' => 'Take or correct attendance older than the allowed days',         'scoped' => true],
+            'attendance.override_holiday' => ['label' => 'Take attendance on a holiday, weekly off day or closure',        'scoped' => false],
+            'attendance.leave'            => ['label' => 'Record student leave applications',                              'scoped' => true],
+            'attendance.leave_approve'    => ['label' => 'Approve or reject student leave',                                'scoped' => true],
+            'attendance.reports'          => ['label' => 'Attendance reports',                                             'scoped' => true],
+            'attendance.export'           => ['label' => 'Export attendance reports to Excel / CSV',                       'scoped' => true],
+            'attendance.print'            => ['label' => 'Print attendance sheets and registers',                          'scoped' => true],
+            'attendance.settings'         => ['label' => 'Attendance settings: mode, rules and thresholds',                'scoped' => false],
         ],
 
         'Results' => [
@@ -136,7 +145,8 @@ return [
             'abilities' => [
                 'students.view:own',
                 'classes.view:own',
-                'attendance.view:own', 'attendance.take:own',
+                'attendance.view:own', 'attendance.take:own', 'attendance.edit:own', 'attendance.leave:own',
+                'attendance.reports:own', 'attendance.export:own', 'attendance.print:own',
                 'results.view:own', 'results.enter:own', 'results.lock:own', 'results.compile:own',
                 'promotion.propose:own',
                 'fees.view_dues:own',
@@ -153,6 +163,7 @@ return [
                 'teaching.own', 'teaching.view_all', 'teaching.approve', 'teaching.review', 'teaching.syllabus', 'teaching.edit_past',
                 'classes.view', 'students.view', 'routine.view',
                 'calendar.view', 'calendar.manage', 'calendar.close',
+                'attendance.view', 'attendance.reports', 'attendance.export', 'attendance.print', 'attendance.leave', 'attendance.leave_approve',
             ],
         ],
 

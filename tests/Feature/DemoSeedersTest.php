@@ -142,13 +142,13 @@ class DemoSeedersTest extends TestCase
     {
         $before = [User::count(), Teacher::count(), SchoolClass::count(), Student::count(), Subject::count(),
             DB::table('class_subject_teachers')->count(), DB::table('student_optional_subjects')->count(),
-            DB::table('results')->count(), DB::table('attendances')->count()];
+            DB::table('results')->count(), DB::table('attendance_records')->count()];
 
         $this->seed(DemoDataSeeder::class);
 
         $after = [User::count(), Teacher::count(), SchoolClass::count(), Student::count(), Subject::count(),
             DB::table('class_subject_teachers')->count(), DB::table('student_optional_subjects')->count(),
-            DB::table('results')->count(), DB::table('attendances')->count()];
+            DB::table('results')->count(), DB::table('attendance_records')->count()];
 
         $this->assertSame($before, $after);
     }
@@ -156,7 +156,7 @@ class DemoSeedersTest extends TestCase
     public function test_marks_and_attendance_are_seeded_and_every_class_tabulates_completely(): void
     {
         $this->assertGreaterThan(0, DB::table('results')->count());
-        $this->assertGreaterThan(0, DB::table('attendances')->count());
+        $this->assertGreaterThan(0, DB::table('attendance_records')->count());
 
         $admin = User::factory()->create(['role' => 'admin']);
 

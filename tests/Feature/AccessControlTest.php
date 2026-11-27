@@ -15,7 +15,7 @@ class AccessControlTest extends TestCase
     {
         $class = $this->makeClass();
 
-        foreach (['/dashboard', '/students', '/users', "/attendance/{$class->id}/records"] as $url) {
+        foreach (['/dashboard', '/students', '/users', "/attendance/records"] as $url) {
             $this->get($url)->assertRedirect('/login');
         }
     }
@@ -25,7 +25,7 @@ class AccessControlTest extends TestCase
         $user  = $this->makeUser(User::ROLE_USER);
         $class = $this->makeClass();
 
-        foreach (['/dashboard', '/users', '/students', '/fees', '/results', "/attendance/{$class->id}/records"] as $url) {
+        foreach (['/dashboard', '/users', '/students', '/fees', '/results', "/attendance/records"] as $url) {
             $this->actingAs($user)->get($url)->assertForbidden();
         }
     }
@@ -37,15 +37,15 @@ class AccessControlTest extends TestCase
         $class   = $this->makeClass(teacher: $teacher);
 
         $this->actingAs($this->makeUser(User::ROLE_USER))
-            ->get("/attendance/{$class->id}/records")
+            ->get("/attendance/records")
             ->assertForbidden();
 
         // A teacher sees the records of their own class...
-        $this->actingAs($teacher)->get("/attendance/{$class->id}/records")->assertOk();
+        $this->actingAs($teacher)->get("/attendance/records")->assertOk();
 
         // ...but not of another teacher's class.
         $other = $this->makeClass('Class 2', 'B');
-        $this->actingAs($teacher)->get("/attendance/{$other->id}/records")->assertForbidden();
+        $this->actingAs($teacher)->get("/attendance?class={$other->id}")->assertForbidden();
     }
 
     public function test_teachers_get_staff_pages_but_not_admin_pages(): void

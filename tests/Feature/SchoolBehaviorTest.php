@@ -2,7 +2,7 @@
 
 namespace Tests\Feature;
 
-use App\Models\Attendance;
+use App\Models\Attendance\Record;
 use App\Models\ContactMessage;
 use App\Models\ResultInput;
 use App\Models\SchoolClass;
@@ -16,7 +16,7 @@ use Tests\TestCase;
 
 class SchoolBehaviorTest extends TestCase
 {
-    use RefreshDatabase, MakesSchoolData;
+    use RefreshDatabase, MakesSchoolData, \Tests\Concerns\RecordsAttendance;
 
     // ------------------------------------------------------------------
     // class_id linking
@@ -110,18 +110,20 @@ class SchoolBehaviorTest extends TestCase
         $class   = $this->makeClass(teacher: $teacher);
         $student = $this->makeStudent($class);
 
-        $payload = fn (string $status) => [
-            'class_id'   => $class->id,
-            'date'       => now()->toDateString(),
-            'attendance' => [['student_id' => $student->id, 'status' => $status]],
+        $payload = fn (string $status, ?int $revision) => [
+            'class_id' => $class->id,
+            'date'     => \App\Services\AcademicCalendar::today(),
+            'revision' => $revision,
+            'entries'  => [['student_id' => $student->id, 'status' => $status]],
         ];
+        app(\App\Services\RoutineService::class)->setWorkingDays([0, 1, 2, 3, 4, 5, 6]);
 
-        $this->actingAs($teacher)->post('/attendance/store', $payload('present'));
-        $this->actingAs($teacher)->post('/attendance/store', $payload('absent'));
+        $this->actingAs($teacher)->post('/attendance', $payload('present', null))->assertSessionHasNoErrors();
+        $this->actingAs($teacher)->post('/attendance', $payload('absent', 1))->assertSessionHasNoErrors();
 
-        $this->assertSame(1, Attendance::where('student_id', $student->id)->count());
-        $this->assertSame('absent', Attendance::where('student_id', $student->id)->value('status'));
-        $this->assertSame($class->id, Attendance::where('student_id', $student->id)->value('class_id'));
+        $this->assertSame(1, Record::where('student_id', $student->id)->count());
+        $this->assertSame('absent', Record::where('student_id', $student->id)->value('status'));
+        $this->assertSame($class->id, Record::where('student_id', $student->id)->value('class_id'));
     }
 
     public function test_attendance_cannot_be_written_for_another_classes_student(): void
@@ -131,13 +133,15 @@ class SchoolBehaviorTest extends TestCase
         $other   = $this->makeClass('Class 2', 'A');
         $foreign = $this->makeStudent($other);
 
-        $this->actingAs($teacher)->post('/attendance/store', [
-            'class_id'   => $mine->id,
-            'date'       => now()->toDateString(),
-            'attendance' => [['student_id' => $foreign->id, 'status' => 'present']],
-        ])->assertSessionHas('error');
+        app(\App\Services\RoutineService::class)->setWorkingDays([0, 1, 2, 3, 4, 5, 6]);
 
-        $this->assertSame(0, Attendance::count());
+        $this->actingAs($teacher)->post('/attendance', [
+            'class_id' => $mine->id,
+            'date'     => \App\Services\AcademicCalendar::today(),
+            'entries'  => [['student_id' => $foreign->id, 'status' => 'present']],
+        ])->assertSessionHasErrors('attendance');
+
+        $this->assertSame(0, Record::count());
     }
 
     // ------------------------------------------------------------------
