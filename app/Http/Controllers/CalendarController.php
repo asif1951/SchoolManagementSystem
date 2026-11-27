@@ -228,9 +228,15 @@ class CalendarController extends Controller
             'events.*.title' => ['required', 'string', 'max:150'], 'events.*.title_bn' => ['nullable', 'string', 'max:150'],
             'events.*.starts_on' => ['required', 'date_format:Y-m-d'], 'events.*.ends_on' => ['required', 'date_format:Y-m-d'], 'events.*.tentative' => ['boolean'],
         ]);
-        $n = $this->editor->addMany(array_map(fn ($e) => $e + ['audience' => 'all'], $d['events']), $user);
+        $updated = 0;
+        $n = $this->editor->addMany(array_map(fn ($e) => $e + ['audience' => 'all'], $d['events']), $user, $updated);
+        $message = $n . ($n === 1 ? ' date was added.' : ' dates were added.');
 
-        return back()->with('success', $n . ($n === 1 ? ' date was added.' : ' dates were added.'));
+        if ($updated) {
+            $message .= " {$updated} " . ($updated === 1 ? 'date was' : 'dates were') . ' corrected to the new end date.';
+        }
+
+        return back()->with('success', $message);
     }
 
     public function template(Request $request)

@@ -279,10 +279,12 @@ class CalendarEditor
 
             $data = $error ? null : ['type' => $kind, 'title' => $title, 'title_bn' => $bn ?: null, 'starts_on' => $start, 'ends_on' => $stop, 'tentative' => $tentative, 'audience' => 'all'];
             $key = $data ? "{$kind}|{$start}|" . mb_strtolower($title) : null;
-            $duplicate = $data && (isset($seen[$key]) || $this->exists($data));
+            // the same entry with another end date is not "already there": adding it again corrects the calendar
+            $old = $data && ! isset($seen[$key]) ? $this->differing($data)->first()?->ends_on->toDateString() : null;
+            $duplicate = $data && ! $old && (isset($seen[$key]) || $this->exists($data));
             $key && $seen[$key] = true;
 
-            $out[] = ['row' => (int) $n, 'error' => $error, 'duplicate' => $duplicate, 'data' => $data, 'text' => trim("{$date} {$title}")];
+            $out[] = ['row' => (int) $n, 'error' => $error, 'duplicate' => $duplicate, 'old_end' => $old, 'data' => $data, 'text' => trim("{$date} {$title}")];
         }
 
         return $out;
@@ -293,14 +295,37 @@ class CalendarEditor
         return CalendarEvent::where('type', $d['type'])->where('starts_on', $d['starts_on'])->where('title', $d['title'])->exists();
     }
 
-    /** save the good rows that are not already there; returns how many were added */
-    public function addMany(array $events, User $by): int
+    /** school-wide single entries with this type, start date and title, but another end date */
+    private function differing(array $d): \Illuminate\Support\Collection
     {
-        return DB::transaction(function () use ($events, $by) {
+        return CalendarEvent::where('type', $d['type'])->where('starts_on', $d['starts_on'])->where('title', $d['title'])
+            ->where('audience', 'all')->where('repeat', 'none')->where('ends_on', '!=', $d['ends_on'])->get();
+    }
+
+    /**
+     * Save the rows that are not already there; returns how many were added. With $updated given, an entry that is there
+     * with another end date takes the new one, and the number of entries corrected is put into it.
+     */
+    public function addMany(array $events, User $by, ?int &$updated = null): int
+    {
+        $correct = func_num_args() > 2;
+        $updated = 0;
+
+        return DB::transaction(function () use ($events, $by, $correct, &$updated) {
             $n = 0;
 
             foreach ($events as $e) {
-                if (! $this->exists($e)) {
+                $wrong = $correct ? $this->differing($e) : collect();
+
+                foreach ($wrong as $event) {
+                    $before = $event->ends_on->toDateString();
+                    $event->update(['ends_on' => $e['ends_on']]);
+                    $this->syncExam($event);
+                    AuditLog::record($event, 'cal.corrected', ['ends_on' => ['from' => $before, 'to' => $e['ends_on']]], $by->id);
+                    $updated++;
+                }
+
+                if ($wrong->isEmpty() && ! $this->exists($e)) {
                     $this->save($e, $by);
                     $n++;
                 }

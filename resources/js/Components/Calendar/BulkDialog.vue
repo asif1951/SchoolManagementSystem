@@ -15,6 +15,9 @@ const error = ref('')
 const busy = ref(false)
 const good = computed(() => (rows.value || []).filter((r) => !r.error && !r.duplicate))
 const typeLabel = (k) => props.types.find((x) => x.key === k)?.label
+const changing = computed(() => good.value.filter((r) => r.old_end).length)
+const adding = computed(() => good.value.length - changing.value)
+const action = computed(() => [adding.value || !changing.value ? `Add ${adding.value} ${adding.value === 1 ? 'date' : 'dates'}` : '', changing.value ? `${adding.value ? 'update' : 'Update'} ${changing.value} ${changing.value === 1 ? 'date' : 'dates'}` : ''].filter(Boolean).join(' and '))
 
 const check = async () => {
     busy.value = true; error.value = ''; rows.value = null
@@ -48,7 +51,7 @@ const save = () => {
         <p v-if="error" class="mt-3 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-red-800" role="alert">{{ error }}</p>
 
         <template v-if="rows">
-            <p class="mt-4 font-semibold">{{ good.length }} will be added · {{ rows.filter((r) => r.duplicate && !r.error).length }} already there · {{ rows.filter((r) => r.error).length }} with a problem</p>
+            <p class="mt-4 font-semibold">{{ adding }} will be added · <span v-if="changing" class="text-orange-700">{{ changing }} will be updated · </span>{{ rows.filter((r) => r.duplicate && !r.error).length }} already there · {{ rows.filter((r) => r.error).length }} with a problem</p>
             <div class="mt-2 max-h-64 overflow-auto rounded-md border border-slate-200">
                 <table class="data-table">
                     <thead><tr><th>Line</th><th>Dates</th><th>Title</th><th>Type</th><th>Result</th></tr></thead>
@@ -57,12 +60,14 @@ const save = () => {
                             <td class="muted">{{ r.row }}</td>
                             <td>{{ r.data ? range(r.data.starts_on, r.data.ends_on, 'both') : r.text }}</td>
                             <td>{{ r.data?.title }}</td><td>{{ r.data ? typeLabel(r.data.type) : '' }}</td>
-                            <td :class="r.error ? 'text-red-700' : r.duplicate ? 'text-amber-700' : 'text-green-700'">{{ r.error || (r.duplicate ? 'Already there' : 'Ready') }}</td>
+                            <td :class="r.error ? 'text-red-700' : r.duplicate || r.old_end ? 'text-amber-700' : 'text-green-700'">
+                                <template v-if="!r.error && r.old_end"><b>End date differs.</b> The calendar has it until {{ range(r.old_end, r.old_end, 'english') }}; it will be changed to {{ range(r.data.ends_on, r.data.ends_on, 'english') }}.</template>
+                                <template v-else>{{ r.error || (r.duplicate ? 'Already there' : 'Ready') }}</template></td>
                         </tr>
                     </tbody>
                 </table>
             </div>
-            <div class="mt-4 flex justify-end gap-2"><button type="button" class="btn" @click="emit('close')">Cancel</button><button type="button" class="btn btn-primary" :disabled="busy || !good.length" @click="save">Add {{ good.length }} {{ good.length === 1 ? 'date' : 'dates' }}</button></div>
+            <div class="mt-4 flex justify-end gap-2"><button type="button" class="btn" @click="emit('close')">Cancel</button><button type="button" class="btn btn-primary" :disabled="busy || !good.length" @click="save">{{ action }}</button></div>
         </template>
     </Dialog>
 </template>

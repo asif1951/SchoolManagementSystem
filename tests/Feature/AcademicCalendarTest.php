@@ -257,6 +257,18 @@ class AcademicCalendarTest extends TestCase
         $events = array_values(array_map(fn ($r) => $r['data'], array_filter($rows, fn ($r) => ! $r['error'])));
         $this->actingAs($this->admin)->post(route('calendar.bulk.store'), ['events' => $events])->assertSessionHasNoErrors();
         $this->actingAs($this->admin)->post(route('calendar.bulk.store'), ['events' => $events])->assertSessionHas('success', '0 dates were added.');
+
+        // the same file again after an entry got a wrong end date: it is shown, and adding corrects it
+        $wrong = CalendarEvent::where('repeat', 'none')->where('audience', 'all')->firstOrFail();
+        $right = $wrong->ends_on->toDateString();
+        $wrong->update(['ends_on' => $wrong->starts_on->copy()->addDays(20)->toDateString()]);
+        $count = CalendarEvent::count();
+        $again = $this->actingAs($this->admin)->postJson(route('calendar.bulk.preview'), ['text' => $text])->json('rows');
+        $changed = array_values(array_filter($again, fn ($r) => ! empty($r['old_end'])));
+        $this->assertCount(1, $changed);
+        $this->assertFalse($changed[0]['duplicate']);
+        $this->actingAs($this->admin)->post(route('calendar.bulk.store'), ['events' => [$changed[0]['data']]])->assertSessionHas('success', '0 dates were added. 1 date was corrected to the new end date.');
+        $this->assertSame([$right, $count], [$wrong->fresh()->ends_on->toDateString(), CalendarEvent::count()]);
         $this->assertSame(3, CalendarEvent::count());
         $this->assertTrue(CalendarEvent::where('title', 'Summer vacation')->first()->off);
 
