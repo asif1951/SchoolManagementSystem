@@ -18,7 +18,7 @@ use Illuminate\Validation\ValidationException;
 /** The Yearly Teaching Plan: making it from the syllabus, dating its chapters, approving and reviewing it. */
 class PlanService
 {
-    public function __construct(private SyllabusService $syllabus, private Progress $progress, private Calendar $calendar, private PeriodsPerWeek $perWeek)
+    public function __construct(private SyllabusService $syllabus, private Progress $progress, private Calendar $calendar, private PeriodsPerWeek $perWeek, private PeriodBudget $budget)
     {
     }
 
@@ -64,8 +64,8 @@ class PlanService
             return 0;
         }
 
-        // chapters without a suggested number share the periods the subject has in a year (about 36 teaching weeks)
-        $year = $this->perWeek->for($plan->class_id, $plan->subject_id) * 36;
+        // chapters without a suggested number share the periods the subject has this year (without a routine: about 36 weeks)
+        $year = $this->budget->for($plan->class_id, $plan->subject_id, $plan->academic_year)['total'] ?? $this->perWeek->for($plan->class_id, $plan->subject_id) * 36;
         $given = $chapters->sum('periods');
         $without = $chapters->where('periods', 0)->count();
         $default = $without ? max(1, (int) floor(max($without, $year - $given) / $without)) : 1;
@@ -115,6 +115,12 @@ class PlanService
             $this->fail('outside_session', ['from' => $from, 'to' => $to]);
         }
 
+        // more periods than the year holds are refused; taking some away is always allowed
+        if (isset($data['planned_periods']) && (int) $data['planned_periods'] > $item->planned_periods) {
+            $total = (int) TeachingPlanItem::where('plan_id', $plan->id)->where('id', '!=', $item->id)->sum('planned_periods') + (int) $data['planned_periods'];
+            $this->budget->guard($total, $this->budget->for($plan->class_id, $plan->subject_id, $plan->academic_year)['total'], $plan->academic_year, 'plan');
+        }
+
         $item->fill(['starts_on' => $start, 'ends_on' => $end] + array_intersect_key($data, ['planned_periods' => 1]));
 
         if (array_key_exists('completed', $data)) {
@@ -137,6 +143,37 @@ class PlanService
         DB::transaction(function () use ($item, $plan, $changes, $replans) {
             $item->save();
             $this->changed($plan, 'plan.item', $changes, $replans);
+        });
+    }
+
+    /**
+     * Save the planned periods of several chapters at once: all or nothing, and never more than the year holds.
+     *
+     * @param  array<int,int>  $periods  item id => periods
+     * @return int chapters changed
+     */
+    public function savePeriods(TeachingPlan $plan, array $periods): int
+    {
+        return DB::transaction(function () use ($plan, $periods) {
+            $items = TeachingPlanItem::where('plan_id', $plan->id)->lockForUpdate()->get();
+            $changed = $items->filter(fn ($i) => isset($periods[$i->id]) && (int) $periods[$i->id] !== $i->planned_periods);
+
+            if ($changed->isEmpty()) {
+                return 0;
+            }
+
+            $total = (int) $items->sum(fn ($i) => (int) ($periods[$i->id] ?? $i->planned_periods));
+            $this->budget->guard($total, $this->budget->for($plan->class_id, $plan->subject_id, $plan->academic_year)['total'], $plan->academic_year);
+            $log = [];
+
+            foreach ($changed as $item) {
+                $log[$item->id] = ['from' => $item->planned_periods, 'to' => (int) $periods[$item->id]];
+                $item->update(['planned_periods' => (int) $periods[$item->id]]);
+            }
+
+            $this->changed($plan, 'plan.periods', ['items' => $log, 'total' => $total]);
+
+            return $changed->count();
         });
     }
 
@@ -256,7 +293,7 @@ class PlanService
         }
 
         $need = (int) $items->sum('planned_periods');
-        $have = (int) floor(count($days) * $perDay);
+        $have = $this->budget->for($plan->class_id, $plan->subject_id, $plan->academic_year)['total'] ?? (int) floor(count($days) * $perDay);
 
         if ($need > $have) {
             array_unshift($out, ['type' => 'total', 'text' => __('teaching.warn.total', ['need' => $need, 'have' => $have, 'week' => $perWeek])]);
@@ -280,6 +317,8 @@ class PlanService
         if ($plan->items()->whereNull('starts_on')->exists() || ! $plan->items()->exists()) {
             $this->fail('set_dates_first');
         }
+
+        $this->budget->guard((int) $plan->items()->sum('planned_periods'), $this->budget->for($plan->class_id, $plan->subject_id, $plan->academic_year)['total'], $plan->academic_year, 'plan');
 
         DB::transaction(function () use ($plan, $by) {
             $plan->update(['status' => 'submitted', 'submitted_at' => now()]);

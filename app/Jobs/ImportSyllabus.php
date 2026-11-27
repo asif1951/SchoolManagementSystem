@@ -10,6 +10,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 use RuntimeException;
 use Throwable;
 
@@ -39,6 +40,9 @@ class ImportSyllabus implements ShouldQueue
             $task->advance(count($result['rows']));
             $task->finish($new + ['skipped' => count($result['errors']), 'errors' => $result['errors']]);
             $disk->delete($file);
+        } catch (ValidationException $e) {
+            $disk->delete($file);
+            $task->fail(new RuntimeException($e->validator->errors()->first() . ' Nothing was imported.'));
         } catch (Throwable $e) {
             if (! $e instanceof RuntimeException) {
                 Log::error("Syllabus import {$task->id} failed: " . $e->getMessage());

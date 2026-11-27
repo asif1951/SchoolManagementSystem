@@ -19,6 +19,50 @@ use Illuminate\Validation\ValidationException;
  */
 class SyllabusService
 {
+    public function __construct(private PeriodBudget $budget)
+    {
+    }
+
+    /** the periods planned by the chapters of one syllabus */
+    public function plannedPeriods(string $year, string $className, int $subjectId): int
+    {
+        return (int) SyllabusChapter::where(['academic_year' => $year, 'class_name' => $className, 'subject_id' => $subjectId])->sum('periods');
+    }
+
+    /** refuse a syllabus that needs more periods than the year holds in any section */
+    private function guard(string $year, string $className, int $subjectId, int $planned, string $field = 'periods'): void
+    {
+        $this->budget->guard($planned, $this->budget->forLevel($year, $className, $subjectId)['limit'], $year, $field);
+    }
+
+    /**
+     * Save the periods of several chapters at once.
+     *
+     * @param  array<int,int>  $periods  chapter id => periods
+     * @return int chapters changed
+     */
+    public function savePeriods(string $year, string $className, int $subjectId, array $periods): int
+    {
+        return DB::transaction(function () use ($year, $className, $subjectId, $periods) {
+            $chapters = SyllabusChapter::where(['academic_year' => $year, 'class_name' => $className, 'subject_id' => $subjectId])->lockForUpdate()->get();
+            $changed = $chapters->filter(fn ($c) => isset($periods[$c->id]) && (int) $periods[$c->id] !== (int) $c->periods);
+
+            if ($changed->isEmpty()) {
+                return 0;
+            }
+
+            $this->guard($year, $className, $subjectId, (int) $chapters->sum(fn ($c) => (int) ($periods[$c->id] ?? $c->periods)));
+
+            foreach ($changed as $c) {
+                $from = (int) $c->periods;
+                $c->update(['periods' => (int) $periods[$c->id]]);
+                AuditLog::record($c, 'syllabus.updated', ['periods' => ['from' => $from, 'to' => (int) $periods[$c->id]]]);
+            }
+
+            return $changed->count();
+        });
+    }
+
     public const IMPORT_COLUMNS = ['Class', 'Subject', 'Chapter', 'Topic', 'Periods'];
 
     public const MAX_IMPORT_ROWS = 20000;
@@ -55,6 +99,7 @@ class SyllabusService
             $position = (int) SyllabusChapter::where(['academic_year' => $year, 'class_name' => $className, 'subject_id' => $subjectId])->max('position');
             $chapter = null;
             $added = 0;
+            $newPeriods = 0;
 
             foreach ($lines as $line) {
                 $line = trim($line);
@@ -80,7 +125,13 @@ class SyllabusService
                 $chapter = SyllabusChapter::create(['academic_year' => $year, 'class_name' => $className, 'subject_id' => $subjectId,
                     'name' => mb_substr($line, 0, 200), 'periods' => $periods, 'position' => ++$position]);
                 AuditLog::record($chapter, 'syllabus.created', ['name' => $chapter->name]);
+                $newPeriods += $periods;
                 $added++;
+            }
+
+            // checked inside the transaction, so a refused list adds nothing
+            if ($newPeriods) {
+                $this->guard($year, $className, $subjectId, $this->plannedPeriods($year, $className, $subjectId), 'text');
             }
 
             return $added;
@@ -89,6 +140,11 @@ class SyllabusService
 
     public function updateChapter(SyllabusChapter $chapter, array $data): void
     {
+        if (isset($data['periods']) && (int) $data['periods'] > (int) $chapter->periods) {
+            $total = $this->plannedPeriods($chapter->academic_year, $chapter->class_name, $chapter->subject_id) - (int) $chapter->periods + (int) $data['periods'];
+            $this->guard($chapter->academic_year, $chapter->class_name, $chapter->subject_id, $total);
+        }
+
         $chapter->fill($data);
 
         if ($chapter->isDirty()) {
@@ -191,6 +247,8 @@ class SyllabusService
                     AuditLog::record($new, 'syllabus.copied', ['from' => "{$fromClass} {$fromYear}"]);
                     $copied++;
                 }
+
+                $this->guard($toYear, $to, $subjectId, $this->plannedPeriods($toYear, $to, $subjectId), 'copy');
             }
 
             return $copied;
@@ -298,6 +356,20 @@ class SyllabusService
                 }
 
                 $tick && $tick();
+            }
+
+            // an import that overfills a syllabus saves nothing
+            foreach (array_keys($sets) as $key) {
+                [$class, $subjectId] = explode('|', $key);
+
+                try {
+                    $this->guard($year, $class, (int) $subjectId, $this->plannedPeriods($year, $class, (int) $subjectId), 'file');
+                } catch (ValidationException $e) {
+                    // a file can hold many syllabuses: say which one is too big
+                    $subject = Subject::whereKey($subjectId)->value('name');
+
+                    throw ValidationException::withMessages(['file' => "{$class}, {$subject}: " . $e->validator->errors()->first()]);
+                }
             }
 
             return $new;

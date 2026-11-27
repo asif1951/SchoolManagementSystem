@@ -69,12 +69,16 @@ class Rows
     {
         return DB::table('class_subject_teachers as t')
             ->join('classes as c', 'c.id', '=', 't.class_id')->join('subjects as s', 's.name', '=', 't.subject')->join('users as u', 'u.id', '=', 't.user_id')
+            // which shift, medium and group the class belongs to, in the same query
+            ->leftJoin('shifts as sh', 'sh.id', '=', 'c.shift_id')->leftJoin('mediums as md', 'md.id', '=', 'c.medium_id')->leftJoin('study_groups as g', 'g.id', '=', 'c.study_group_id')
             ->leftJoin('teaching_plans as p', fn ($j) => $j->on('p.class_id', '=', 't.class_id')->on('p.subject_id', '=', 's.id')->on('p.teacher_id', '=', 't.user_id'))
             ->whereNull('t.ends_on')->whereNull('p.id')->where('c.academic_year', $year)->where('u.status', User::STATUS_ACTIVE)
             ->when($teacherId, fn ($q) => $q->where('t.user_id', $teacherId))
             ->orderBy('c.class_name')->orderBy('c.section')->orderBy('s.name')->limit($limit)
-            ->get(['t.class_id', 's.id as subject_id', 't.user_id as teacher_id', 's.name as subject', 'u.name as teacher', 'c.class_name', 'c.class_title', 'c.section', 'c.section_title'])
-            ->map(fn ($r) => ['class_id' => (int) $r->class_id, 'subject_id' => (int) $r->subject_id, 'teacher_id' => (int) $r->teacher_id, 'class' => $this->label($r), 'subject' => $r->subject, 'teacher' => $r->teacher])->all();
+            ->get(['t.class_id', 's.id as subject_id', 't.user_id as teacher_id', 's.name as subject', 'u.name as teacher', 'c.class_name', 'c.class_title', 'c.section', 'c.section_title', 'sh.name as shift', 'md.name as medium', 'g.name as study_group'])
+            ->map(fn ($r) => ['class_id' => (int) $r->class_id, 'subject_id' => (int) $r->subject_id, 'teacher_id' => (int) $r->teacher_id, 'class' => $this->label($r), 'subject' => $r->subject, 'teacher' => $r->teacher,
+                'level' => SchoolClass::joinLabel($r->class_name, $r->class_title), 'section' => $r->section ? SchoolClass::joinLabel($r->section, $r->section_title) : null,
+                'shift' => $r->shift, 'medium' => $r->medium, 'group' => $r->study_group])->all();
     }
 
     /** plans of the same subject and class level (last year, other sections) whose dates can be copied */

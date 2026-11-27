@@ -3,13 +3,15 @@ import Shell from '@/Components/Teaching/Shell.vue'
 import Bar from '@/Components/Teaching/Bar.vue'
 import Chip from '@/Components/Teaching/Chip.vue'
 import Dialog from '@/Components/Teaching/Dialog.vue'
+import BudgetBar from '@/Components/Teaching/BudgetBar.vue'
+import BudgetDialog from '@/Components/Teaching/BudgetDialog.vue'
 import Timeline from '@/Components/Teaching/Timeline.vue'
 import { Link, router } from '@inertiajs/vue3'
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useT } from '@/composables/useT'
 
 const props = defineProps({
-    plan: Object, items: Array, warnings: Array, session: Object, perWeek: Number, reviews: Array,
+    plan: Object, items: Array, warnings: Array, session: Object, perWeek: Number, reviews: Array, budget: { type: Object, default: null },
     copySources: Array, copyTargets: Array, can: Object, approval: Boolean, flash: Object,
 })
 const t = useT('teaching')
@@ -28,6 +30,24 @@ const moveDates = (item, starts_on, ends_on) => {
 const setDate = (item, field, value) => { if ((value || null) !== item[field]) update(item, { [field]: value || null }) }
 
 const dialog = ref(null)
+
+// ---- periods: typed freely, totalled live, saved together -------------------------------
+const draft = reactive({})
+const resetDraft = () => { Object.keys(draft).forEach((k) => delete draft[k]); for (const i of props.items) draft[i.id] = i.planned_periods }
+watch(() => props.items.map((i) => `${i.id}:${i.planned_periods}`).join(), resetDraft, { immediate: true })
+const planned = computed(() => props.items.reduce((n, i) => n + (Number(draft[i.id]) || 0), 0))
+const dirty = computed(() => props.items.some((i) => (Number(draft[i.id]) || 0) !== i.planned_periods))
+const limit = computed(() => props.budget?.total ?? null)
+const note = computed(() => (limit.value === null ? '' : t('budget.from_routine')))
+const ask = ref(null)                              // { type: 'over' | 'short', planned }
+const putPeriods = () => router.put(route('teaching.plans.periods', props.plan.id),
+    { periods: Object.fromEntries(props.items.map((i) => [i.id, Math.max(1, Number(draft[i.id]) || 1)])) },
+    { ...keep, onStart: () => { busy.value = true }, onFinish: () => { busy.value = false; ask.value = null } })
+/** over the year's periods: stopped. Under: asked. Exactly right, or no figure: saved at once. */
+const savePeriods = () => {
+    if (limit.value !== null && planned.value !== limit.value) ask.value = { type: planned.value > limit.value ? 'over' : 'short', planned: planned.value }
+    else putPeriods()
+}
 const schedule = reactive({ from: props.session.today > props.session.from && props.session.today < props.session.to && props.items.some((i) => i.progress > 0) ? props.session.today : props.session.from, to: props.session.to })
 const busy = ref(false)
 const menu = ref(null)
@@ -91,7 +111,10 @@ const doRemoveItem = () => router.delete(route('teaching.items.destroy', dialog.
             <button v-if="can.edit" type="button" class="btn btn-primary mt-3" @click="post('teaching.plans.sync')">{{ t('plan.sync') }}</button>
         </div>
 
-        <section v-else class="panel overflow-hidden">
+        <BudgetBar v-if="items.length && budget" :limit="limit" :planned="planned" :year="plan.year" :note="note" :dirty="dirty" :busy="busy" :can-save="can.edit" @save="savePeriods" @reset="resetDraft" />
+        <BudgetDialog v-if="ask" :ask="ask" :limit="limit" :year="plan.year" :busy="busy" @save="putPeriods" @close="ask = null" />
+
+        <section v-if="items.length" class="panel overflow-hidden">
             <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 py-2 dark:border-slate-800">
                 <div class="flex gap-1" role="tablist">
                     <button v-for="v in ['table', 'timeline']" :key="v" type="button" role="tab" :aria-selected="view === v" class="rounded px-3 py-1.5 text-sm font-medium" :class="view === v ? 'bg-brand-700 text-white' : 'text-slate-600 hover:bg-slate-100'" @click="setView(v)">{{ t(`plan.${v}`) }}</button>
@@ -112,7 +135,7 @@ const doRemoveItem = () => router.delete(route('teaching.items.destroy', dialog.
                             <td><div class="font-medium text-slate-900 dark:text-white">{{ i.chapter }}</div><div v-if="i.topics.length" class="max-w-[11rem] truncate text-xs text-slate-500" :title="i.topics.join(', ')">{{ i.topics.join(', ') }}</div></td>
                             <td><input type="date" class="field w-36 !px-2" :value="i.starts_on" :min="session.from" :max="session.to" :disabled="!can.edit" :aria-label="`${i.chapter} ${t('from')}`" @change="setDate(i, 'starts_on', $event.target.value)" /></td>
                             <td><input type="date" class="field w-36 !px-2" :value="i.ends_on" :min="session.from" :max="session.to" :disabled="!can.edit" :aria-label="`${i.chapter} ${t('to')}`" @change="setDate(i, 'ends_on', $event.target.value)" /></td>
-                            <td><input type="number" min="1" max="500" class="field w-16 !px-2" :value="i.planned_periods" :disabled="!can.edit" :aria-label="`${i.chapter} ${t('periods')}`" @change="update(i, { planned_periods: Number($event.target.value) || 1 })" /></td>
+                            <td><input v-model="draft[i.id]" type="number" min="1" max="500" class="field w-16 !px-2" :disabled="!can.edit" :aria-label="`${i.chapter} ${t('periods')}`" @keydown.enter.prevent="dirty && savePeriods()" /></td>
                             <td><Bar :done="i.progress" compact /><span class="text-xs tabular-nums text-slate-500">{{ Math.round(i.progress) }}%</span></td>
                             <td><Chip :value="i.status" /></td>
                             <td v-if="can.edit" class="num">

@@ -278,6 +278,42 @@ class AcademicCalendar
         return $this->daysWhere($from, $to, $classId, fn ($j) => $j['working'] && ! $j['exam']);
     }
 
+    /**
+     * The teaching days of a range with the weekday whose routine runs on each (a make-up day follows another).
+     *
+     * @return array<string,int> date => weekday
+     */
+    public function teachingWeekdays(string $from, string $to, ?int $classId = null): array
+    {
+        if ($to < $from || Carbon::parse($from)->diffInDays($to) > 1100) {
+            return [];
+        }
+
+        // a class with no event of its own has exactly the school's days: worked out once for all such classes
+        if ($classId !== null && ! collect($this->events($from, $to))->contains(fn ($e) => $e['audience'] === 'classes' && in_array($classId, $e['class_ids'], true))) {
+            $classId = null;
+        }
+
+        $key = "teaching|{$from}|{$to}|{$classId}";
+
+        if (isset($this->mapCache[$key])) {
+            return $this->mapCache[$key];
+        }
+
+        $map = $this->byDay($from, $to);
+        $out = [];
+
+        for ($d = Carbon::parse($from); ($s = $d->toDateString()) <= $to; $d->addDay()) {
+            $j = $this->judge($s, $classId, $map[$s] ?? []);
+
+            if ($j['working'] && ! $j['exam']) {
+                $out[$s] = $j['routine_day'];
+            }
+        }
+
+        return $this->mapCache[$key] = $out;
+    }
+
     /** the days of a range with no school for the class: what attendance must not count */
     public function closedDays(string $from, string $to, ?int $classId = null): array
     {

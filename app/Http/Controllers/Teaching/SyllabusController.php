@@ -49,6 +49,8 @@ class SyllabusController extends TeachingController
             'chapters' => $chapters->map(fn ($c) => ['id' => $c->id, 'name' => $c->name, 'periods' => $c->periods,
                 'topics' => $c->topics->map(fn ($t) => ['id' => $t->id, 'name' => $t->name])->values()])->values(),
             'earlier' => $earlier,
+            // how many periods the year really holds for this subject in this class
+            'budget' => $class && $subjectId ? app(\App\Services\Teaching\PeriodBudget::class)->forLevel($year, $class, (int) $subjectId) : null,
             'canEdit' => $user->canDo('teaching.syllabus'),
             'flash' => $this->flash(),
         ]);
@@ -75,6 +77,15 @@ class SyllabusController extends TeachingController
         $this->syllabus->updateChapter($chapter, $d);
 
         return back();
+    }
+
+    public function periods(Request $request)
+    {
+        $this->need($request, 'teaching.syllabus');
+        $d = $request->validate($this->setRules() + ['periods' => ['required', 'array', 'max:500'], 'periods.*' => ['required', 'integer', 'between:0,500']]);
+        $this->syllabus->savePeriods($d['academic_year'], $d['class_name'], (int) $d['subject_id'], $d['periods']);
+
+        return back()->with('success', __('teaching.budget.saved'));
     }
 
     public function destroy(Request $request, SyllabusChapter $chapter)

@@ -35,6 +35,9 @@ const more = ref(false)
 const notHeld = ref(false)
 const reasons = ['holiday', 'absent', 'event', 'exam', 'other']
 
+// "held" recorded by attendance: nobody has said yet how much was covered (a teacher's own entry always says how it went)
+const unmarked = computed(() => !!form.id && form.held && form.coverage === 0 && !form.understanding)
+
 const topics = computed(() => props.items.find((i) => i.id === form.item_id)?.topics ?? [])
 const choice = computed({
     get: () => (form.item_id ? `${form.item_id}:${form.topic_id ?? ''}` : ''),
@@ -73,7 +76,7 @@ const later = () => { clearTimeout(timer); if (form.id) timer = setTimeout(push,
 // something typed a moment ago is still saved when the page is left
 onBeforeUnmount(() => { if (timer) push() })
 
-const cover = (value) => { form.held = true; form.not_held_reason = null; form.coverage = value; notHeld.value = false; remember(); push() }
+const cover = (value) => { form.understanding ||= remembered().understanding || 'good'; form.held = true; form.not_held_reason = null; form.coverage = value; notHeld.value = false; remember(); push() }
 const missed = (reason) => { form.held = false; form.not_held_reason = t(`reason.${reason}`); form.coverage = 0; notHeld.value = false; push() }
 const set = (field, value) => { form[field] = value; remember(); if (form.id) push() }
 const copyLast = () => {
@@ -133,10 +136,12 @@ const coverages = [{ v: 100, k: 'completed', on: 'border-green-700 bg-green-700 
 
             <p v-if="!form.held" class="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900">{{ t('log.not_held') }}: {{ form.not_held_reason }}</p>
 
+            <p v-if="unmarked" class="rounded-md border border-brand-300 bg-brand-50 px-3 py-2 text-sm font-medium text-brand-900 dark:bg-slate-800 dark:text-brand-100">{{ t('log.held_by_attendance') }}</p>
+
             <div class="grid grid-cols-3 gap-2" role="group" :aria-label="t('log.how_much')">
                 <button v-for="c in coverages" :key="c.k" type="button" class="min-h-[2.75rem] rounded-md border-2 px-1 text-sm font-semibold transition-colors disabled:opacity-50"
-                        :class="form.held && form.coverage === c.v && logged ? c.on : 'border-slate-300 bg-white text-slate-700 hover:border-brand-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200'"
-                        :aria-pressed="form.held && form.coverage === c.v && logged" :disabled="disabled" @click="cover(c.v)">{{ t(`coverage.${c.k}`) }}</button>
+                        :class="form.held && form.coverage === c.v && logged && !unmarked ? c.on : 'border-slate-300 bg-white text-slate-700 hover:border-brand-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200'"
+                        :aria-pressed="form.held && form.coverage === c.v && logged && !unmarked" :disabled="disabled" @click="cover(c.v)">{{ t(`coverage.${c.k}`) }}</button>
             </div>
 
             <div v-if="logged && form.held" class="flex flex-wrap items-center gap-2">

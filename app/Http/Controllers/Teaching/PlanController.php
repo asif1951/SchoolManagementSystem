@@ -43,13 +43,16 @@ class PlanController extends TeachingController
             'years' => $years, 'session' => $year, 'filters' => $filters,
             'plans' => ['data' => $this->rows->present($page->items()), 'prev' => $page->previousPageUrl(), 'next' => $page->nextPageUrl(), 'page' => $page->currentPage()],
             'seesAll' => Access::seesAll($user),
-            'teachers' => Access::seesAll($user) ? $this->teachers() : [],
-            'classes' => $this->rows->classes($year),
-            'subjects' => Subject::query()->toBase()->where('is_active', true)->orderBy('name')->get(['id', 'name']),
-            // assignments of the class module that have no plan yet: one tap makes it
-            'missing' => $this->can($user) ? $this->rows->missing($year, $user->canDo('teaching.manage_all') ? $filters['teacher'] : $user->id) : [],
+            // closures: worked out only when the screen asks, so changing a plan filter costs no query for these
+            'teachers' => fn () => Access::seesAll($user) ? $this->teachers() : [],
+            'classes' => fn () => $this->rows->classes($year),
+            'subjects' => fn () => Subject::query()->toBase()->where('is_active', true)->orderBy('name')->get(['id', 'name']),
+            // every assignment of the class module that has no plan yet, in one query: the screen filters it itself
+            'missing' => fn () => $this->can($user) ? $this->rows->missing($year, $user->canDo('teaching.manage_all') ? null : $user->id, 5000) : [],
+            // how many are made, whatever the filters below say: one count on an index
+            'plannedCount' => fn () => TeachingPlan::where('academic_year', $year)->when($only, fn ($q) => $q->where('teacher_id', $only))->count(),
             'canSchedule' => $this->can($user),
-            'canMakeMine' => $user->canDo('teaching.own') && count($this->rows->missing($year, $user->id, 1)) > 0,
+            'canMakeMine' => fn () => $user->canDo('teaching.own') && count($this->rows->missing($year, $user->id, 1)) > 0,
             'approval' => (bool) Settings::get('approval_required'),
             'flash' => $this->flash(),
         ]);
@@ -99,6 +102,7 @@ class PlanController extends TeachingController
             'warnings' => $this->plans->warnings($plan, $items),
             'session' => ['from' => $from, 'to' => $to, 'today' => $today, 'closed' => $this->calendar->closedRanges($from, $to, $plan->class_id)],
             'perWeek' => $perWeek->for($plan->class_id, $plan->subject_id),
+            'budget' => app(\App\Services\Teaching\PeriodBudget::class)->for($plan->class_id, $plan->subject_id, $plan->academic_year),
             'reviews' => $plan->reviews()->with('author:id,name')->limit(30)->get()->map(fn ($r) => ['id' => $r->id, 'kind' => $r->kind, 'body' => $r->body, 'by' => $r->author?->name, 'at' => $r->created_at->format('d M Y, h:i A')]),
             // where this plan can be copied to, or filled from
             'copySources' => $canEdit ? $this->rows->copySources($plan) : [],
@@ -132,6 +136,15 @@ class PlanController extends TeachingController
         $this->plans->updateItem($item, $d);
 
         return back();
+    }
+
+    public function periods(Request $request, TeachingPlan $plan)
+    {
+        $this->editable($request, $plan);
+        $d = $request->validate(['periods' => ['required', 'array', 'max:500'], 'periods.*' => ['required', 'integer', 'between:1,500']]);
+        $this->plans->savePeriods($plan, $d['periods']);
+
+        return back()->with('success', __('teaching.budget.saved'));
     }
 
     public function destroyItem(Request $request, TeachingPlanItem $item)

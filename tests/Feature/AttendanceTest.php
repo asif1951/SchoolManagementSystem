@@ -163,6 +163,9 @@ class AttendanceTest extends TestCase
         // "class held" reaches the teaching log without a second entry
         $this->assertSame(2, DB::table('teaching_logs')->where('log_date', self::TODAY)->where('held', true)->count());
 
+        // nothing is claimed about how much was covered: the teacher's screen asks for it
+        $this->assertSame(2, DB::table('teaching_logs')->where('coverage', 0)->whereNull('understanding')->whereNull('item_id')->count());
+
         // a later timetable change does not rewrite what was recorded
         DB::table('class_routine_slots')->delete();
         $kept = collect(app(Register::class)->periods($this->class, self::TODAY))->firstWhere('period_id', $first);

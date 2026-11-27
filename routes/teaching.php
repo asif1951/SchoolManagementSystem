@@ -60,6 +60,7 @@ Route::prefix('teaching')->name('teaching.')->group(function () {
         Route::post('/{plan}/copy', 'copy')->name('.copy');
         Route::post('/{plan}/sync', 'sync')->name('.sync');
         Route::post('/{plan}/order', 'reorder')->name('.reorder');
+        Route::put('/{plan}/periods', 'periods')->name('.periods');
         Route::post('/{plan}/submit', 'submit')->name('.submit');
         Route::post('/{plan}/decide', 'decide')->name('.decide');
         Route::post('/{plan}/reviews', 'review')->name('.review');
@@ -76,6 +77,7 @@ Route::prefix('teaching')->name('teaching.')->group(function () {
 
     Route::prefix('syllabus')->name('syllabus')->group(function () {
         Route::get('/', [SyllabusController::class, 'index']);
+        Route::put('/periods', [SyllabusController::class, 'periods'])->name('.periods');
         Route::post('/chapters', [SyllabusController::class, 'store'])->name('.store');
         Route::post('/chapters/order', [SyllabusController::class, 'reorder'])->name('.reorder');
         Route::put('/chapters/{chapter}', [SyllabusController::class, 'update'])->name('.update');
